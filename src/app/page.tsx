@@ -26,6 +26,7 @@ type ToolCallDisplay = {
 };
 
 type AgentEvent =
+  | { type: 'conversation_assigned'; conversationId: string }
   | { type: 'message_start' }
   | { type: 'message_delta'; content: string }
   | { type: 'message_end'; content: string }
@@ -45,6 +46,9 @@ type AgentEvent =
     }
   | { type: 'error'; message: string }
   | { type: 'done' };
+
+/** localStorage key for the current conversation id. */
+const CONV_KEY = 'vp_conversation_id';
 
 // ─────────────────────────────────────────────────────────────────────
 // Suggested first prompts shown when the user opens the page with no history.
@@ -84,9 +88,67 @@ export default function Home() {
   const [toolCalls, setToolCalls] = useState<ToolCallDisplay[]>([]);
   const [error, setError] = useState<string | null>(null);
 
+  // ── Persistence (localStorage ↔ Supabase) ──
+  const [conversationId, setConversationId] = useState<string | null>(null);
+  const [hydrationDone, setHydrationDone] = useState(false);
+
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
   const abortRef = useRef<AbortController | null>(null);
+  // Mirror conversationId in a ref so send() reads the latest value without
+  // making it a useCallback dep (which would re-create send on every change).
+  const conversationIdRef = useRef<string | null>(null);
+  useEffect(() => {
+    conversationIdRef.current = conversationId;
+  }, [conversationId]);
+
+  // On mount: read localStorage, ask Supabase for the saved conversation,
+  // pre-populate messages so a page reload resumes the chat.
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    const saved = window.localStorage.getItem(CONV_KEY);
+    if (!saved) {
+      setHydrationDone(true);
+      return;
+    }
+    setConversationId(saved);
+    (async () => {
+      try {
+        const r = await fetch(`/api/conversations/${saved}/messages`, {
+          cache: 'no-store',
+        });
+        if (r.status === 404) {
+          // Stale id — clear it and start fresh.
+          window.localStorage.removeItem(CONV_KEY);
+          setConversationId(null);
+          return;
+        }
+        if (!r.ok) {
+          console.warn('[history] load failed:', r.status);
+          return;
+        }
+        const data = (await r.json()) as {
+          messages?: Array<{
+            id: string;
+            role: 'user' | 'assistant';
+            content: string | null;
+          }>;
+        };
+        const restored: DisplayMessage[] = (data.messages ?? [])
+          .filter((m) => m.role === 'user' || m.role === 'assistant')
+          .map((m) => ({
+            id: m.id,
+            role: m.role,
+            content: m.content ?? '',
+          }));
+        if (restored.length > 0) setMessages(restored);
+      } catch (e) {
+        console.warn('[history] load error:', e);
+      } finally {
+        setHydrationDone(true);
+      }
+    })();
+  }, []);
 
   // Auto-scroll to bottom whenever content changes
   useEffect(() => {
@@ -134,7 +196,11 @@ export default function Home() {
         const res = await fetch('/api/chat', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ message: trimmed, history }),
+          body: JSON.stringify({
+            message: trimmed,
+            history,
+            conversationId: conversationIdRef.current,
+          }),
           signal: controller.signal,
         });
 
@@ -192,6 +258,12 @@ export default function Home() {
   const handleAgentEvent = useCallback(
     (evt: AgentEvent, streamId: string) => {
       switch (evt.type) {
+        case 'conversation_assigned':
+          setConversationId(evt.conversationId);
+          if (typeof window !== 'undefined') {
+            window.localStorage.setItem(CONV_KEY, evt.conversationId);
+          }
+          break;
         case 'tool_start':
           setToolCalls((prev) => [
             ...prev,
@@ -274,7 +346,8 @@ export default function Home() {
     }
   };
 
-  const isEmpty = messages.length === 0 && toolCalls.length === 0;
+  const isEmpty =
+    hydrationDone && messages.length === 0 && toolCalls.length === 0;
 
   return (
     <div className="flex h-full min-h-screen flex-col bg-zinc-950 text-zinc-100">
