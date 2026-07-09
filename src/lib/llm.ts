@@ -80,25 +80,52 @@ export type ChatCompletionResponse = {
 
 // ─── Convenience wrappers ────────────────────────────────────────────────
 
+/**
+ * Transform our slim ToolDefinition[] into OpenAI's ChatCompletionTool[] shape
+ * (the wire format DeepSeek expects):
+ *
+ *   { type: 'function', function: { name, description, parameters } }
+ *
+ * Without `type: 'function'` at the top level, DeepSeek rejects the request
+ * with `tools[0]: missing field 'type'`.
+ */
+function wrapTools(tools?: ToolDefinition[]) {
+  if (!tools) return undefined;
+  return tools.map((t) => ({
+    type: 'function' as const,
+    function: {
+      name: t.name,
+      description: t.description,
+      parameters: t.parameters,
+    },
+  }));
+}
+
 export async function chat(req: Omit<ChatCompletionRequest, 'model'>) {
   // DeepSeek's API is OpenAI-compatible but our ToolDefinition is a slimmed
-  // subset. Cast the whole call to `any` to skip OpenAI SDK's stricter
-  // discriminator on `stream` (true / false / null) and ChatCompletionTool
-  // shape — runtime behavior matches.
-  return deepseek.chat.completions.create({
+  // subset. We wrap it via `wrapTools` above before sending. Cast the whole
+  // call to `any` to skip OpenAI SDK's stricter discriminator on `stream`
+  // (true / false / null) — runtime behavior matches.
+  const body = {
     model: MODEL,
     ...req,
-  } as any) as any;
+    tools: wrapTools(req.tools),
+  };
+  return deepseek.chat.completions.create(body as any) as any;
 }
 
 export async function* chatStream(
   req: Omit<ChatCompletionRequest, 'model' | 'stream'>,
 ) {
-  const stream = (await deepseek.chat.completions.create({
+  const body = {
     model: MODEL,
     ...req,
+    tools: wrapTools(req.tools),
     stream: true,
-  } as any)) as unknown as AsyncIterable<{
+  };
+  const stream = (await deepseek.chat.completions.create(
+    body as any,
+  )) as unknown as AsyncIterable<{
     choices?: Array<{
       delta?: {
         content?: string | null;
