@@ -1,16 +1,17 @@
 /**
- * Agent core: ReAct loop with tool calling.
+ * Agent core: ReAct loop with real LLM streaming.
  *
- * Yields streaming events that the API route forwards to the client as SSE.
+ * Yields SSE events that the API route forwards to the client.
  *
  * Loop:
- *   1. Send messages + tools to LLM
- *   2. If LLM returns tool_calls → execute them, append tool results, loop
- *   3. If LLM returns final text → yield it, return
+ *   1. Send messages + tools to LLM (stream mode)
+ *   2. As tokens arrive → emit `message_delta` events live
+ *   3. If the LLM emits tool_calls → execute them, append tool results, loop
+ *   4. If the LLM emits text only → emit `message_end` + `done`, return
  */
 
 import type { ChatMessage, ToolCall } from './llm';
-import { chat } from './llm';
+import { chatStream } from './llm';
 import { TOOL_DEFINITIONS, runTool, type ToolName } from './tools';
 import { AGENT_SYSTEM_PROMPT } from './prompts';
 
@@ -37,6 +38,92 @@ export type AgentEvent =
 
 const MAX_ITERATIONS = 8;
 
+type StreamChunk = {
+  choices?: Array<{
+    delta?: {
+      content?: string | null;
+      tool_calls?: Array<{
+        index: number;
+        id?: string;
+        type?: 'function';
+        function?: { name?: string; arguments?: string };
+      }>;
+    };
+    finish_reason?: string;
+  }>;
+};
+
+/**
+ * Stream one LLM turn. Yields the assistant's `content` tokens as
+ * `message_delta` events as they arrive. Tool calls are accumulated
+ * across chunks and returned via the out-param at the end of the stream.
+ *
+ * Returns: { content, toolCalls, finishReason }
+ */
+async function* streamOneTurn(
+  messages: ChatMessage[],
+): AsyncGenerator<AgentEvent, { content: string; toolCalls: ToolCall[] }> {
+  const stream = (await chatStream({
+    messages,
+    tools: TOOL_DEFINITIONS,
+    tool_choice: 'auto',
+    temperature: 0.7,
+    max_tokens: 4000,
+  })) as unknown as AsyncIterable<StreamChunk>;
+
+  let accumulatedContent = '';
+  // DeepSeek sends tool_calls incrementally across chunks:
+  // chunk 1: { index: 0, id: 'call_abc', function: { name: 'web_search', arguments: '' } }
+  // chunk 2: { index: 0, function: { arguments: '{"q' } }
+  // chunk 3: { index: 0, function: { arguments: 'uery":' } }
+  // ... so we accumulate per index.
+  const tcByIndex = new Map<
+    number,
+    { id: string; name: string; args: string }
+  >();
+  let startedMessage = false;
+
+  for await (const chunk of stream) {
+    const delta = chunk.choices?.[0]?.delta;
+    if (!delta) continue;
+
+    if (typeof delta.content === 'string' && delta.content.length > 0) {
+      if (!startedMessage) {
+        startedMessage = true;
+        yield { type: 'message_start' };
+      }
+      accumulatedContent += delta.content;
+      yield { type: 'message_delta', content: delta.content };
+    }
+
+    if (delta.tool_calls) {
+      for (const tc of delta.tool_calls) {
+        const idx = tc.index;
+        const existing = tcByIndex.get(idx);
+        if (existing) {
+          if (tc.id) existing.id = tc.id;
+          if (tc.function?.name) existing.name = tc.function.name;
+          if (tc.function?.arguments) existing.args += tc.function.arguments;
+        } else {
+          tcByIndex.set(idx, {
+            id: tc.id ?? '',
+            name: tc.function?.name ?? '',
+            args: tc.function?.arguments ?? '',
+          });
+        }
+      }
+    }
+  }
+
+  const toolCalls: ToolCall[] = Array.from(tcByIndex.values()).map((tc) => ({
+    id: tc.id,
+    type: 'function',
+    function: { name: tc.name, arguments: tc.args },
+  }));
+
+  return { content: accumulatedContent, toolCalls };
+}
+
 export async function* runAgent(
   userMessage: string,
   history: ChatMessage[] = [],
@@ -48,23 +135,17 @@ export async function* runAgent(
   ];
 
   for (let iter = 0; iter < MAX_ITERATIONS; iter++) {
-    let response;
+    let result: { content: string; toolCalls: ToolCall[] };
     try {
-      response = (await chat({
-        messages,
-        tools: TOOL_DEFINITIONS,
-        tool_choice: 'auto',
-        temperature: 0.7,
-        max_tokens: 4000,
-      })) as {
-        choices: Array<{
-          message: {
-            content: string | null;
-            tool_calls?: ToolCall[];
-          };
-          finish_reason: string;
-        }>;
-      };
+      const gen = streamOneTurn(messages);
+      // Forward all events from the inner generator to the outer one
+      // while collecting the final return value.
+      let next = await gen.next();
+      while (!next.done) {
+        yield next.value;
+        next = await gen.next();
+      }
+      result = next.value;
     } catch (e) {
       yield {
         type: 'error',
@@ -73,24 +154,24 @@ export async function* runAgent(
       return;
     }
 
-    const choice = response.choices[0];
-    if (!choice) {
-      yield { type: 'error', message: 'No response from LLM' };
-      return;
-    }
-
-    const { content, tool_calls: toolCalls } = choice.message;
+    const { content, toolCalls } = result;
 
     // ── Path 1: tool calls ────────────────────────────────────────────
-    if (toolCalls && toolCalls.length > 0) {
-      // Append assistant message (with tool_calls) to history first
+    if (toolCalls.length > 0) {
+      // If the LLM streamed any text alongside the tool call (a "thinking"
+      // preamble), commit it as a message first so the user sees it.
+      if (content.length > 0) {
+        yield { type: 'message_end', content };
+      }
+
+      // Record the assistant turn (with tool_calls) in the message log.
       messages.push({
         role: 'assistant',
-        content: content ?? '',
+        content,
         tool_calls: toolCalls,
       });
 
-      // Execute each tool sequentially, yield events, append tool results
+      // Execute each tool, yield events, append results.
       for (const tc of toolCalls) {
         const args = safeParse(tc.function.arguments);
 
@@ -101,43 +182,32 @@ export async function* runAgent(
           args,
         };
 
-        const result = await runTool(tc.function.name as ToolName, args);
+        const r = await runTool(tc.function.name as ToolName, args);
 
         yield {
           type: 'tool_end',
           toolCallId: tc.id,
           name: tc.function.name,
-          ok: result.ok,
-          result: result.data,
-          error: result.error,
+          ok: r.ok,
+          result: r.data,
+          error: r.error,
         };
 
-        // Append tool result for the next LLM turn
         messages.push({
           role: 'tool',
           tool_call_id: tc.id,
-          content: JSON.stringify({
-            ok: result.ok,
-            data: result.data,
-            error: result.error,
-          }),
+          content: JSON.stringify({ ok: r.ok, data: r.data, error: r.error }),
         });
       }
 
-      // Loop back: ask LLM with tool results included
+      // Loop back: ask LLM again with tool results included.
       continue;
     }
 
-    // ── Path 2: final text response ───────────────────────────────────
-    const text = content ?? '';
-
-    yield { type: 'message_start' };
-    // Chunk the text into a few pieces so the UI feels like streaming
-    const chunks = chunkText(text, 40);
-    for (const c of chunks) {
-      yield { type: 'message_delta', content: c };
+    // ── Path 2: final text response (already streamed token-by-token) ─
+    if (content.length > 0) {
+      yield { type: 'message_end', content };
     }
-    yield { type: 'message_end', content: text };
     yield { type: 'done' };
     return;
   }
@@ -157,13 +227,4 @@ function safeParse(s: string): Record<string, unknown> {
   } catch {
     return {};
   }
-}
-
-function chunkText(text: string, size: number): string[] {
-  if (!text) return [];
-  const out: string[] = [];
-  for (let i = 0; i < text.length; i += size) {
-    out.push(text.slice(i, i + size));
-  }
-  return out;
 }
