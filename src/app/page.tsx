@@ -1,6 +1,7 @@
 'use client';
 
 import { useCallback, useEffect, useRef, useState } from 'react';
+import { t, DEFAULT_LANG, LANG_STORAGE_KEY, type Lang, type DictKey } from '@/lib/i18n';
 
 // ─── Types ─────────────────────────────────────────────────────────────
 
@@ -46,23 +47,11 @@ type AgentEvent =
 
 const CONV_KEY = 'vp_conversation_id';
 
-const SUGGESTED_PROMPTS = [
-  {
-    title: 'Audit my account',
-    body: "What's the current state of my X account? Where should I focus first?",
-  },
-  {
-    title: 'Find creators to follow',
-    body: 'Find me 5 indie developers or AI builders on X I should follow right now.',
-  },
-  {
-    title: 'Build-in-public draft',
-    body: 'Look at my GitHub repos and suggest a build-in-public tweet for today.',
-  },
-  {
-    title: 'Trends + angles',
-    body: 'Search X and the web for trending AI/indie-hacker topics today and give me 3 angles I could tweet.',
-  },
+const SUGGESTED_PROMPT_KEYS: { title: DictKey; body: DictKey }[] = [
+  { title: 'prompt.audit.title', body: 'prompt.audit.body' },
+  { title: 'prompt.findCreators.title', body: 'prompt.findCreators.body' },
+  { title: 'prompt.buildInPublic.title', body: 'prompt.buildInPublic.body' },
+  { title: 'prompt.trends.title', body: 'prompt.trends.body' },
 ];
 
 // ─────────────────────────────────────────────────────────────────────
@@ -86,53 +75,55 @@ type Preference = {
 };
 
 type Source = {
-  key: string;
-  label: string;
+  prefKey: string;
+  label: DictKey;
   placeholder: string;
-  hint: string;
+  hint: DictKey;
 };
 
 const SOURCES: Source[] = [
   {
-    key: 'github.token',
-    label: 'GitHub token',
+    prefKey: 'github.token',
+    label: 'source.github.label',
     placeholder: 'ghp_xxx or gho_xxx',
-    hint: 'Used by github_read. Optional — without it you get 60 req/hour.',
+    hint: 'source.github.hint',
   },
   {
-    key: 'tavily.key',
-    label: 'Tavily API key',
+    prefKey: 'tavily.key',
+    label: 'source.tavily.label',
     placeholder: 'tvly-xxx',
-    hint: 'Used by web_search. Get one at tavily.com.',
+    hint: 'source.tavily.hint',
   },
   {
-    key: 'x.auth_token',
-    label: 'X (Twitter) auth_token',
+    prefKey: 'x.auth_token',
+    label: 'source.xAuth.label',
     placeholder: 'auth_token cookie value',
-    hint: 'Used by twitter_search / twitter_get_user_tweets. From browser devtools.',
+    hint: 'source.xAuth.hint',
   },
   {
-    key: 'x.ct0',
-    label: 'X (Twitter) ct0',
+    prefKey: 'x.ct0',
+    label: 'source.xCt0.label',
     placeholder: 'ct0 cookie value',
-    hint: 'X CSRF token. Pairs with auth_token.',
+    hint: 'source.xCt0.hint',
   },
 ];
 
-function timeAgo(iso: string): string {
-  const t = new Date(iso).getTime();
-  const diff = Date.now() - t;
+function timeAgo(iso: string, lang: Lang): string {
+  const t1 = new Date(iso).getTime();
+  const diff = Date.now() - t1;
   const min = Math.floor(diff / 60000);
-  if (min < 1) return 'just now';
-  if (min < 60) return `${min}m ago`;
+  if (min < 1) return t(lang, 'meta.justNow');
+  if (min < 60) return lang === 'zh' ? `${min} 分钟前` : `${min}m ago`;
   const hr = Math.floor(min / 60);
-  if (hr < 24) return `${hr}h ago`;
+  if (hr < 24) return lang === 'zh' ? `${hr} 小时前` : `${hr}h ago`;
   const d = Math.floor(hr / 24);
-  if (d < 7) return `${d}d ago`;
+  if (d < 7) return lang === 'zh' ? `${d} 天前` : `${d}d ago`;
   return new Date(iso).toLocaleDateString();
 }
 
 function Sidebar({
+  lang,
+  setLang,
   conversations,
   activeId,
   onSelect,
@@ -140,6 +131,8 @@ function Sidebar({
   onRefresh,
   onClose,
 }: {
+  lang: Lang;
+  setLang: (l: Lang) => void;
   conversations: ConversationSummary[];
   activeId: string | null;
   onSelect: (id: string) => void;
@@ -184,23 +177,29 @@ function Sidebar({
         body: JSON.stringify({ key, value }),
       });
       if (r.ok) {
-        setStatusMsg(`saved ${key}`);
+        setStatusMsg(t(lang, 'source.statusMsg.saved', { key }));
         setEditingKey(null);
         setEditingValue('');
         await loadPrefs();
       } else {
         const err = (await r.json()) as { error?: string };
-        setStatusMsg(`error: ${err.error ?? r.status}`);
+        setStatusMsg(
+          t(lang, 'source.statusMsg.error', { err: err.error ?? String(r.status) }),
+        );
       }
     } catch (e) {
-      setStatusMsg(`error: ${e instanceof Error ? e.message : String(e)}`);
+      setStatusMsg(
+        t(lang, 'source.statusMsg.error', {
+          err: e instanceof Error ? e.message : String(e),
+        }),
+      );
     } finally {
       setSavingKey(null);
     }
   };
 
   const forgetPref = async (key: string) => {
-    if (!confirm(`Forget ${key}?`)) return;
+    if (!confirm(t(lang, 'source.confirmForget', { key }))) return;
     setSavingKey(key);
     setStatusMsg(null);
     try {
@@ -208,13 +207,17 @@ function Sidebar({
         method: 'DELETE',
       });
       if (r.ok) {
-        setStatusMsg(`forgot ${key}`);
+        setStatusMsg(t(lang, 'source.statusMsg.forgot', { key }));
         await loadPrefs();
       } else {
-        setStatusMsg(`error: HTTP ${r.status}`);
+        setStatusMsg(t(lang, 'source.statusMsg.error', { err: String(r.status) }));
       }
     } catch (e) {
-      setStatusMsg(`error: ${e instanceof Error ? e.message : String(e)}`);
+      setStatusMsg(
+        t(lang, 'source.statusMsg.error', {
+          err: e instanceof Error ? e.message : String(e),
+        }),
+      );
     } finally {
       setSavingKey(null);
     }
@@ -224,13 +227,19 @@ function Sidebar({
 
   return (
     <aside className="flex h-full w-full flex-col border-r border-zinc-800 bg-zinc-950 text-zinc-100">
-      {/* Header */}
       <div className="flex items-center justify-between border-b border-zinc-800 px-4 py-3">
         <div className="flex items-center gap-2">
           <div className="flex h-7 w-7 items-center justify-center rounded-md bg-gradient-to-br from-violet-500 to-fuchsia-500 text-sm font-bold">
             V
           </div>
-          <span className="font-semibold tracking-tight">viralpost</span>
+          <div className="flex flex-col leading-tight">
+            <span className="font-semibold tracking-tight">
+              {t(lang, 'app.name')}
+            </span>
+            <span className="text-[10px] uppercase tracking-wider text-zinc-500">
+              {t(lang, 'app.tagline')}
+            </span>
+          </div>
         </div>
         <button
           onClick={onClose}
@@ -241,21 +250,51 @@ function Sidebar({
         </button>
       </div>
 
+      {/* Language switcher */}
+      <div className="border-b border-zinc-800 px-4 py-2.5">
+        <div className="text-[10px] uppercase tracking-wider text-zinc-500">
+          {t(lang, 'sidebar.lang.label')}
+        </div>
+        <div className="mt-1.5 flex gap-1">
+          <button
+            onClick={() => setLang('zh')}
+            className={`flex-1 rounded px-2 py-1 text-xs font-medium transition ${
+              lang === 'zh'
+                ? 'bg-violet-600 text-white'
+                : 'bg-zinc-900 text-zinc-400 hover:bg-zinc-800'
+            }`}
+          >
+            中文
+          </button>
+          <button
+            onClick={() => setLang('en')}
+            className={`flex-1 rounded px-2 py-1 text-xs font-medium transition ${
+              lang === 'en'
+                ? 'bg-violet-600 text-white'
+                : 'bg-zinc-900 text-zinc-400 hover:bg-zinc-800'
+            }`}
+          >
+            English
+          </button>
+        </div>
+      </div>
+
       {/* New chat */}
       <div className="px-3 pt-3">
         <button
           onClick={onNew}
           className="flex w-full items-center justify-center gap-2 rounded-lg border border-zinc-700 bg-zinc-900 px-3 py-2 text-sm font-medium text-zinc-100 transition hover:border-violet-500/50 hover:bg-zinc-800"
         >
-          <span className="text-base leading-none">+</span> New chat
+          <span className="text-base leading-none">+</span>{' '}
+          {t(lang, 'sidebar.newChat')}
         </button>
       </div>
 
-      {/* Conversations list */}
+      {/* Conversations */}
       <div className="mt-4 flex-1 overflow-y-auto px-3">
         <div className="mb-2 flex items-center justify-between">
           <h3 className="text-[10px] font-medium uppercase tracking-wider text-zinc-500">
-            Recent
+            {t(lang, 'sidebar.recent')}
           </h3>
           <button
             onClick={() => {
@@ -263,13 +302,13 @@ function Sidebar({
               if (sourcesOpen) loadPrefs();
             }}
             className="text-[10px] text-zinc-500 hover:text-zinc-300"
-            title="Refresh"
+            title={t(lang, 'sidebar.refresh')}
           >
             ↻
           </button>
         </div>
         {conversations.length === 0 ? (
-          <p className="text-xs text-zinc-500">No chats yet — start one ↑</p>
+          <p className="text-xs text-zinc-500">{t(lang, 'sidebar.emptyChats')}</p>
         ) : (
           <div className="flex flex-col gap-1">
             {conversations.map((c) => {
@@ -285,11 +324,11 @@ function Sidebar({
                   }`}
                 >
                   <div className="line-clamp-2 w-full text-zinc-100">
-                    {c.title || 'Untitled'}
+                    {c.title || (lang === 'zh' ? '无标题' : 'Untitled')}
                   </div>
                   <div className="text-[10px] text-zinc-500">
-                    {c.message_count} {c.message_count === 1 ? 'msg' : 'msgs'}{' '}
-                    · {timeAgo(c.updated_at)}
+                    {c.message_count} {t(lang, 'meta.msg')} ·{' '}
+                    {timeAgo(c.updated_at, lang)}
                   </div>
                 </button>
               );
@@ -298,37 +337,41 @@ function Sidebar({
         )}
       </div>
 
-      {/* Sources (collapsible) */}
+      {/* Sources */}
       <div className="border-t border-zinc-800 px-3 pb-3 pt-2">
         <button
           onClick={() => setSourcesOpen((o) => !o)}
           className="flex w-full items-center justify-between rounded px-1 py-1.5 text-[10px] font-medium uppercase tracking-wider text-zinc-500 hover:text-zinc-300"
         >
-          <span>Sources</span>
+          <span>{t(lang, 'sidebar.sources')}</span>
           <span>{sourcesOpen ? '▾' : '▸'}</span>
         </button>
         {sourcesOpen && (
           <div className="mt-2 space-y-3">
             {prefsLoading && (
-              <div className="text-[10px] text-zinc-500">loading…</div>
+              <div className="text-[10px] text-zinc-500">
+                {t(lang, 'source.statusMsg.loading')}
+              </div>
             )}
             {SOURCES.map((src) => {
-              const pref = prefMap.get(src.key);
+              const pref = prefMap.get(src.prefKey);
               const isSet = pref?.has_value ?? false;
-              const isEditing = editingKey === src.key;
-              const isSaving = savingKey === src.key;
+              const isEditing = editingKey === src.prefKey;
+              const isSaving = savingKey === src.prefKey;
               return (
-                <div key={src.key} className="space-y-1">
+                <div key={src.prefKey} className="space-y-1">
                   <div className="flex items-center justify-between">
                     <label className="text-xs font-medium text-zinc-300">
-                      {src.label}
+                      {t(lang, src.label)}
                     </label>
                     <span
                       className={`text-[10px] ${
                         isSet ? 'text-emerald-400' : 'text-zinc-500'
                       }`}
                     >
-                      {isSet ? '● set' : '○ not set'}
+                      {isSet
+                        ? t(lang, 'source.status.set')
+                        : t(lang, 'source.status.unset')}
                     </span>
                   </div>
                   {isEditing ? (
@@ -342,11 +385,11 @@ function Sidebar({
                         autoFocus
                       />
                       <button
-                        onClick={() => savePref(src.key, editingValue)}
+                        onClick={() => savePref(src.prefKey, editingValue)}
                         disabled={isSaving || !editingValue}
                         className="rounded bg-violet-600 px-2 py-1 text-[10px] font-medium text-white hover:bg-violet-500 disabled:opacity-40"
                       >
-                        {isSaving ? '…' : 'Save'}
+                        {isSaving ? '…' : t(lang, 'source.btn.save')}
                       </button>
                       <button
                         onClick={() => {
@@ -355,37 +398,41 @@ function Sidebar({
                         }}
                         className="rounded bg-zinc-800 px-2 py-1 text-[10px] text-zinc-400 hover:bg-zinc-700"
                       >
-                        ✕
+                        {t(lang, 'source.btn.cancel')}
                       </button>
                     </div>
                   ) : (
                     <div className="flex gap-1">
                       <code className="flex-1 truncate rounded border border-zinc-800 bg-zinc-900/50 px-2 py-1 font-mono text-[11px] text-zinc-500">
-                        {isSet ? src.key : `(empty: ${src.key})`}
+                        {isSet
+                          ? src.prefKey
+                          : t(lang, 'source.empty', { key: src.prefKey })}
                       </code>
                       <button
                         onClick={() => {
-                          setEditingKey(src.key);
+                          setEditingKey(src.prefKey);
                           setEditingValue('');
                         }}
                         disabled={isSaving}
                         className="rounded bg-zinc-800 px-2 py-1 text-[10px] text-zinc-300 hover:bg-zinc-700"
                       >
-                        {isSet ? 'Replace' : 'Add'}
+                        {isSet
+                          ? t(lang, 'source.btn.replace')
+                          : t(lang, 'source.btn.add')}
                       </button>
                       {isSet && (
                         <button
-                          onClick={() => forgetPref(src.key)}
+                          onClick={() => forgetPref(src.prefKey)}
                           disabled={isSaving}
                           className="rounded bg-zinc-800 px-2 py-1 text-[10px] text-zinc-400 hover:bg-red-900/40 hover:text-red-200"
                         >
-                          Forget
+                          {t(lang, 'source.btn.forget')}
                         </button>
                       )}
                     </div>
                   )}
                   <p className="text-[10px] leading-snug text-zinc-600">
-                    {src.hint}
+                    {t(lang, src.hint)}
                   </p>
                 </div>
               );
@@ -416,6 +463,15 @@ export default function Home() {
   const [conversationId, setConversationId] = useState<string | null>(null);
   const [hydrationDone, setHydrationDone] = useState(false);
 
+  // ── Language (default ZH) ──
+  const [lang, setLangState] = useState<Lang>(DEFAULT_LANG);
+  const setLang = useCallback((l: Lang) => {
+    setLangState(l);
+    if (typeof window !== 'undefined') {
+      window.localStorage.setItem(LANG_STORAGE_KEY, l);
+    }
+  }, []);
+
   const [sidebarOpen, setSidebarOpen] = useState(true);
   const [conversations, setConversations] = useState<ConversationSummary[]>(
     [],
@@ -430,7 +486,6 @@ export default function Home() {
     conversationIdRef.current = conversationId;
   }, [conversationId]);
 
-  // ── Load conversation list (also after every send) ──
   const refreshConversations = useCallback(async () => {
     try {
       const r = await fetch('/api/conversations', { cache: 'no-store' });
@@ -443,7 +498,6 @@ export default function Home() {
     }
   }, []);
 
-  // ── Switch to a specific conversation ──
   const switchToConversation = useCallback(async (id: string) => {
     if (typeof window === 'undefined') return;
     window.localStorage.setItem(CONV_KEY, id);
@@ -481,7 +535,6 @@ export default function Home() {
     }
   }, []);
 
-  // ── New chat: clear local + server assigns new id on next message ──
   const startNewChat = useCallback(() => {
     if (typeof window !== 'undefined') {
       window.localStorage.removeItem(CONV_KEY);
@@ -494,9 +547,13 @@ export default function Home() {
     setStatus('idle');
   }, []);
 
-  // ── On mount: load localStorage → fetch history + load conv list ──
+  // On mount: load lang + history + conv list
   useEffect(() => {
     if (typeof window === 'undefined') return;
+    const savedLang = window.localStorage.getItem(LANG_STORAGE_KEY);
+    if (savedLang === 'zh' || savedLang === 'en') {
+      setLangState(savedLang);
+    }
     const saved = window.localStorage.getItem(CONV_KEY);
     refreshConversations();
 
@@ -542,12 +599,10 @@ export default function Home() {
     })();
   }, [refreshConversations]);
 
-  // Auto-scroll
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [messages, streamingText, toolCalls]);
 
-  // Auto-grow textarea
   useEffect(() => {
     const el = inputRef.current;
     if (!el) return;
@@ -555,7 +610,6 @@ export default function Home() {
     el.style.height = `${Math.min(el.scrollHeight, 200)}px`;
   }, [input]);
 
-  // ── Send ─────────────────────────────────────────────────────────────
   const send = useCallback(
     async (text: string) => {
       const trimmed = text.trim();
@@ -629,14 +683,9 @@ export default function Home() {
             handleAgentEvent(evt, streamId);
           }
         }
-
-        // After stream closes, refresh conversation list (title may have updated,
-        // new conversation may have been created).
         refreshConversations();
       } catch (e) {
-        if ((e as Error).name === 'AbortError') {
-          // user cancelled
-        } else {
+        if ((e as Error).name !== 'AbortError') {
           setError(e instanceof Error ? e.message : String(e));
         }
       } finally {
@@ -734,6 +783,8 @@ export default function Home() {
       {sidebarOpen && (
         <div className="w-72 shrink-0 lg:w-80">
           <Sidebar
+            lang={lang}
+            setLang={setLang}
             conversations={conversations}
             activeId={conversationId}
             onSelect={switchToConversation}
@@ -745,7 +796,6 @@ export default function Home() {
       )}
 
       <div className="flex flex-1 flex-col">
-        {/* Top bar */}
         <header className="flex items-center justify-between border-b border-zinc-800/80 bg-zinc-950/80 px-4 py-3 backdrop-blur">
           <div className="flex items-center gap-2">
             {!sidebarOpen && (
@@ -757,22 +807,21 @@ export default function Home() {
               </button>
             )}
             <span className="text-xs text-zinc-500">
-              {conversationId ? 'Chat' : 'New chat'}
+              {conversationId ? t(lang, 'topbar.chat') : t(lang, 'topbar.newChat')}
             </span>
           </div>
           <div className="flex items-center gap-3 text-xs text-zinc-500">
-            <span className="hidden sm:inline">MVP build</span>
-            <span className="hidden h-1 w-1 rounded-full bg-emerald-500 sm:inline-block" />
-            <span className="hidden sm:inline">v0.2</span>
+            <span className="hidden sm:inline">{t(lang, 'app.version')}</span>
           </div>
         </header>
 
         <main className="flex-1 overflow-y-auto">
           <div className="mx-auto w-full max-w-3xl px-4 py-8 sm:py-12">
             {isEmpty ? (
-              <EmptyState onPick={(p) => send(p)} />
+              <EmptyState lang={lang} onPick={(p) => send(p)} />
             ) : (
               <MessageList
+                lang={lang}
                 messages={messages}
                 toolCalls={toolCalls}
                 streamingId={streamingId}
@@ -786,6 +835,7 @@ export default function Home() {
         </main>
 
         <Composer
+          lang={lang}
           input={input}
           setInput={setInput}
           status={status}
@@ -803,32 +853,36 @@ export default function Home() {
 // Empty state
 // ─────────────────────────────────────────────────────────────────────
 
-function EmptyState({ onPick }: { onPick: (text: string) => void }) {
+function EmptyState({
+  lang,
+  onPick,
+}: {
+  lang: Lang;
+  onPick: (text: string) => void;
+}) {
   return (
     <div className="flex flex-col items-center justify-center pt-8 text-center sm:pt-16">
       <div className="mb-4 flex h-12 w-12 items-center justify-center rounded-2xl bg-gradient-to-br from-violet-500 to-fuchsia-500 text-xl font-bold shadow-lg shadow-violet-500/20">
         V
       </div>
       <h1 className="text-2xl font-semibold tracking-tight sm:text-3xl">
-        Hi — I'm your X growth agent.
+        {t(lang, 'empty.greeting')}
       </h1>
       <p className="mt-3 max-w-md text-sm text-zinc-400 sm:text-base">
-        I can search X and the web, look at your GitHub, watch creators you
-        admire, and write tweets with you. Pick a starter, or just say what you
-        need.
+        {t(lang, 'empty.body')}
       </p>
 
       <div className="mt-8 grid w-full max-w-2xl grid-cols-1 gap-2 sm:grid-cols-2">
-        {SUGGESTED_PROMPTS.map((p) => (
+        {SUGGESTED_PROMPT_KEYS.map((p) => (
           <button
             key={p.title}
-            onClick={() => onPick(p.body)}
+            onClick={() => onPick(t(lang, p.body))}
             className="group rounded-xl border border-zinc-800 bg-zinc-900/40 p-4 text-left transition hover:border-violet-500/40 hover:bg-zinc-900"
           >
             <div className="text-sm font-medium text-zinc-200 group-hover:text-violet-300">
-              {p.title}
+              {t(lang, p.title)}
             </div>
-            <div className="mt-1 text-xs text-zinc-500">{p.body}</div>
+            <div className="mt-1 text-xs text-zinc-500">{t(lang, p.body)}</div>
           </button>
         ))}
       </div>
@@ -841,6 +895,7 @@ function EmptyState({ onPick }: { onPick: (text: string) => void }) {
 // ─────────────────────────────────────────────────────────────────────
 
 function MessageList({
+  lang,
   messages,
   toolCalls,
   streamingId,
@@ -848,6 +903,7 @@ function MessageList({
   status,
   error,
 }: {
+  lang: Lang;
   messages: DisplayMessage[];
   toolCalls: ToolCallDisplay[];
   streamingId: string | null;
@@ -891,7 +947,8 @@ function MessageList({
             key={`err${i}`}
             className="rounded-lg border border-red-900/60 bg-red-950/40 p-3 text-sm text-red-200"
           >
-            <strong className="font-semibold">Error:</strong> {it.text}
+            <strong className="font-semibold">{t(lang, 'bubble.errorPrefix')}:</strong>{' '}
+            {it.text}
           </div>
         );
       })}
@@ -984,6 +1041,7 @@ function StatusDot({ status }: { status: ToolCallDisplay['status'] }) {
 }
 
 function Composer({
+  lang,
   input,
   setInput,
   status,
@@ -992,6 +1050,7 @@ function Composer({
   onKeyDown,
   inputRef,
 }: {
+  lang: Lang;
   input: string;
   setInput: (v: string) => void;
   status: 'idle' | 'streaming';
@@ -1015,7 +1074,9 @@ function Composer({
             onChange={(e) => setInput(e.target.value)}
             onKeyDown={onKeyDown}
             placeholder={
-              streaming ? 'Agent is running…' : 'Ask anything. Enter to send.'
+              streaming
+                ? t(lang, 'composer.placeholderStreaming')
+                : t(lang, 'composer.placeholder')
             }
             disabled={streaming}
             className="w-full resize-none bg-transparent px-4 py-3 text-sm text-zinc-100 placeholder:text-zinc-500 focus:outline-none disabled:opacity-50"
@@ -1027,7 +1088,7 @@ function Composer({
             onClick={onStop}
             className="flex h-11 shrink-0 items-center justify-center rounded-full bg-zinc-800 px-4 text-sm font-medium text-zinc-200 transition hover:bg-zinc-700"
           >
-            Stop
+            {t(lang, 'composer.stop')}
           </button>
         ) : (
           <button
@@ -1035,13 +1096,12 @@ function Composer({
             disabled={!input.trim()}
             className="flex h-11 shrink-0 items-center justify-center rounded-full bg-violet-600 px-4 text-sm font-medium text-white transition hover:bg-violet-500 disabled:cursor-not-allowed disabled:opacity-40"
           >
-            Send
+            {t(lang, 'composer.send')}
           </button>
         )}
       </form>
       <div className="mx-auto max-w-3xl px-4 pb-3 text-[10px] text-zinc-600">
-        viralpost is an autonomous agent — it can call tools. Inspect tool calls
-        in the stream.
+        {t(lang, 'composer.footer')}
       </div>
     </div>
   );

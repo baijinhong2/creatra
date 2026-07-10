@@ -13,9 +13,9 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "viralpost — your X growth agent",
+  title: "viralpost — 你的 X 增长 agent",
   description:
-    "An autonomous agent that helps you grow on X/Twitter by gathering info and writing content with you.",
+    "真正的 AI agent,帮你管理 X(Twitter)账号 —— 主动收集信息、记住你的定位、陪你写推文。",
   robots: {
     index: false,
     follow: false,
@@ -35,7 +35,7 @@ export default function RootLayout({
 }>) {
   return (
     <html
-      lang="en"
+      lang="zh-CN"
       className={`${geistSans.variable} ${geistMono.variable} h-full antialiased`}
     >
       <body className="min-h-full flex flex-col">{children}</body>
