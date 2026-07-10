@@ -38,6 +38,8 @@ export function getDb(): Pool | null {
 
 /** Table name registry — duplicated from supabase.ts to avoid coupling. */
 export const TABLE = {
+  users: 'vp_users',
+  sessions: 'vp_sessions',
   conversations: 'vp_conversations',
   messages: 'vp_messages',
   accountProfile: 'vp_account_profile',

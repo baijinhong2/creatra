@@ -2,6 +2,11 @@ import { NextRequest } from 'next/server';
 import type { ChatMessage } from '@/lib/llm';
 import { runAgent } from '@/lib/agent';
 import { getDb, TABLE } from '@/lib/db';
+import {
+  currentSessionIdServer,
+  userFromSession,
+  AuthError,
+} from '@/lib/auth';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -19,32 +24,29 @@ function titleFromMessage(text: string): string {
 }
 
 async function ensureConversation(
+  userId: string,
   conversationId: string | undefined,
   firstMessage: string,
 ): Promise<string | null> {
   const db = getDb();
-  if (!db) {
-    console.warn('[chat] persistence disabled (no DATABASE_URL)');
-    return null;
-  }
-
+  if (!db) return null;
   if (conversationId) {
     const existing = await db.query<{ id: string }>(
-      `SELECT id FROM ${TABLE.conversations} WHERE id = $1`,
-      [conversationId],
+      `SELECT id FROM ${TABLE.conversations} WHERE id = $1 AND user_id = $2`,
+      [conversationId, userId],
     );
     if (existing.rows[0]?.id) return existing.rows[0].id;
   }
-
   const inserted = await db.query<{ id: string }>(
-    `INSERT INTO ${TABLE.conversations} (title) VALUES ($1) RETURNING id`,
-    [titleFromMessage(firstMessage)],
+    `INSERT INTO ${TABLE.conversations} (user_id, title) VALUES ($1, $2) RETURNING id`,
+    [userId, titleFromMessage(firstMessage)],
   );
   return inserted.rows[0]?.id ?? null;
 }
 
 async function persistMessage(
   conversationId: string,
+  userId: string,
   role: 'user' | 'assistant' | 'system' | 'tool',
   content: string | null,
   metadata: Record<string, unknown> = {},
@@ -53,8 +55,9 @@ async function persistMessage(
   if (!db) return;
   try {
     await db.query(
-      `INSERT INTO ${TABLE.messages} (conversation_id, role, content, metadata) VALUES ($1, $2, $3, $4)`,
-      [conversationId, role, content, metadata],
+      `INSERT INTO ${TABLE.messages} (conversation_id, user_id, role, content, metadata)
+       VALUES ($1, $2, $3, $4, $5)`,
+      [conversationId, userId, role, content, metadata],
     );
     await db.query(
       `UPDATE ${TABLE.conversations} SET updated_at = now() WHERE id = $1`,
@@ -66,23 +69,30 @@ async function persistMessage(
 }
 
 export async function POST(request: NextRequest) {
+  // Auth: pull the user from the session set by middleware.
+  const sid = await currentSessionIdServer();
+  const user = await userFromSession(sid);
+  if (!user) {
+    return new Response('Unauthorized', { status: 401 });
+  }
+
   let body: RequestBody;
   try {
     body = (await request.json()) as RequestBody;
   } catch {
     return new Response('Invalid JSON', { status: 400 });
   }
-
   if (!body.message?.trim()) {
     return new Response('message is required', { status: 400 });
   }
 
   const conversationId = await ensureConversation(
+    user.id,
     body.conversationId,
     body.message,
   );
   if (conversationId) {
-    await persistMessage(conversationId, 'user', body.message);
+    await persistMessage(conversationId, user.id, 'user', body.message);
   }
 
   const encoder = new TextEncoder();
@@ -94,38 +104,46 @@ export async function POST(request: NextRequest) {
             encoder.encode(`data: ${JSON.stringify(obj)}\n\n`),
           );
         } catch {
-          // controller closed — fine
+          // controller closed
         }
       };
 
-      // Send the assigned conversationId immediately so the client can
-      // persist it to localStorage even before any agent events arrive.
       if (conversationId) {
         enqueue({ type: 'conversation_assigned', conversationId });
       }
 
       try {
-        for await (const event of runAgent(body.message, body.history ?? [])) {
+        for await (const event of runAgent(
+          body.message,
+          body.history ?? [],
+          user.id,
+          conversationId ?? undefined,
+        )) {
           enqueue(event);
           if (
             conversationId &&
             event.type === 'message_end' &&
             typeof event.content === 'string'
           ) {
-            // fire-and-forget — UI shouldn't wait for DB write
-            persistMessage(conversationId, 'assistant', event.content);
+            persistMessage(conversationId, user.id, 'assistant', event.content);
           }
         }
         controller.enqueue(encoder.encode('data: [DONE]\n\n'));
       } catch (e) {
+        const err = e instanceof AuthError ? 'Unauthorized' : e instanceof Error ? e.message : String(e);
+        const status = e instanceof AuthError ? 401 : undefined;
         const errChunk = `data: ${JSON.stringify({
           type: 'error',
-          message: e instanceof Error ? e.message : String(e),
+          message: err,
         })}\n\n`;
         try {
           controller.enqueue(encoder.encode(errChunk));
         } catch {
           // already closed
+        }
+        if (status === 401) {
+          try { controller.close(); } catch {}
+          return;
         }
       } finally {
         try {
@@ -154,6 +172,7 @@ export async function GET() {
       usage:
         'POST { message: string, history?: ChatMessage[], conversationId?: string }',
       stream: 'text/event-stream (SSE)',
+      auth: 'requires session cookie',
       events: [
         'conversation_assigned',
         'message_start',

@@ -130,6 +130,8 @@ function Sidebar({
   onNew,
   onRefresh,
   onClose,
+  currentUser,
+  onLogout,
 }: {
   lang: Lang;
   setLang: (l: Lang) => void;
@@ -139,6 +141,8 @@ function Sidebar({
   onNew: () => void;
   onRefresh: () => void;
   onClose: () => void;
+  currentUser: { id: string; email: string; display_name: string | null } | null;
+  onLogout: () => void;
 }) {
   const [sourcesOpen, setSourcesOpen] = useState(false);
   const [prefs, setPrefs] = useState<Preference[]>([]);
@@ -249,6 +253,32 @@ function Sidebar({
           ✕
         </button>
       </div>
+
+      {/* User pill + logout */}
+      {currentUser && (
+        <div className="flex items-center justify-between gap-2 border-b border-zinc-800 px-3 py-2">
+          <div className="flex min-w-0 flex-1 items-center gap-2">
+            <div className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-zinc-800 text-[10px] font-medium text-zinc-300">
+              {(currentUser.display_name || currentUser.email).charAt(0).toUpperCase()}
+            </div>
+            <div className="min-w-0 flex-1 leading-tight">
+              <div className="truncate text-xs font-medium text-zinc-200">
+                {currentUser.display_name || currentUser.email.split('@')[0]}
+              </div>
+              <div className="truncate text-[10px] text-zinc-500">
+                {currentUser.email}
+              </div>
+            </div>
+          </div>
+          <button
+            onClick={onLogout}
+            className="shrink-0 rounded px-2 py-1 text-[10px] text-zinc-500 hover:bg-zinc-800 hover:text-zinc-200"
+            title="登出"
+          >
+            登出
+          </button>
+        </div>
+      )}
 
       {/* Language switcher */}
       <div className="border-b border-zinc-800 px-4 py-2.5">
@@ -463,6 +493,11 @@ export default function Home() {
   const [conversationId, setConversationId] = useState<string | null>(null);
   const [hydrationDone, setHydrationDone] = useState(false);
 
+  // ── Auth ──
+  type CurrentUser = { id: string; email: string; display_name: string | null };
+  const [currentUser, setCurrentUser] = useState<CurrentUser | null>(null);
+  const [authChecked, setAuthChecked] = useState(false);
+
   // ── Language (default ZH) ──
   const [lang, setLangState] = useState<Lang>(DEFAULT_LANG);
   const setLang = useCallback((l: Lang) => {
@@ -547,8 +582,49 @@ export default function Home() {
     setStatus('idle');
   }, []);
 
-  // On mount: load lang + history + conv list
+  // On mount: check auth → if not signed in, redirect; else load history.
   useEffect(() => {
+    if (typeof window === 'undefined') return;
+    (async () => {
+      try {
+        const meRes = await fetch('/api/auth/me', { cache: 'no-store' });
+        if (meRes.status === 401) {
+          window.location.href = '/login';
+          return;
+        }
+        if (!meRes.ok) {
+          window.location.href = '/login';
+          return;
+        }
+        const meData = (await meRes.json()) as { user: CurrentUser | null };
+        if (!meData.user) {
+          window.location.href = '/login';
+          return;
+        }
+        setCurrentUser(meData.user);
+        setAuthChecked(true);
+      } catch {
+        window.location.href = '/login';
+      }
+    })();
+  }, []);
+
+  // Logout helper
+  const logout = useCallback(async () => {
+    try {
+      await fetch('/api/auth/logout', { method: 'POST' });
+    } catch {
+      // ignore
+    }
+    if (typeof window !== 'undefined') {
+      window.localStorage.removeItem(CONV_KEY);
+    }
+    window.location.href = '/login';
+  }, []);
+
+  // On mount (after auth): load lang + history + conv list
+  useEffect(() => {
+    if (!authChecked) return;
     if (typeof window === 'undefined') return;
     const savedLang = window.localStorage.getItem(LANG_STORAGE_KEY);
     if (savedLang === 'zh' || savedLang === 'en') {
@@ -567,7 +643,7 @@ export default function Home() {
         const r = await fetch(`/api/conversations/${saved}/messages`, {
           cache: 'no-store',
         });
-        if (r.status === 404) {
+        if (r.status === 404 || r.status === 401) {
           window.localStorage.removeItem(CONV_KEY);
           setConversationId(null);
           return;
@@ -597,7 +673,7 @@ export default function Home() {
         setHydrationDone(true);
       }
     })();
-  }, [refreshConversations]);
+  }, [authChecked, refreshConversations]);
 
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
@@ -778,6 +854,16 @@ export default function Home() {
   const isEmpty =
     hydrationDone && messages.length === 0 && toolCalls.length === 0;
 
+  // While auth is being checked, render a minimal loading state so we don't
+  // flash the page contents before redirect kicks in.
+  if (!authChecked) {
+    return (
+      <div className="flex h-screen items-center justify-center bg-zinc-950 text-zinc-500">
+        <span className="text-sm">加载中…</span>
+      </div>
+    );
+  }
+
   return (
     <div className="flex h-full min-h-screen bg-zinc-950 text-zinc-100">
       {sidebarOpen && (
@@ -791,6 +877,8 @@ export default function Home() {
             onNew={startNewChat}
             onRefresh={refreshConversations}
             onClose={() => setSidebarOpen(false)}
+            currentUser={currentUser}
+            onLogout={logout}
           />
         </div>
       )}

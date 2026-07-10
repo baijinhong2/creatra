@@ -62,6 +62,8 @@ type StreamChunk = {
  */
 async function* streamOneTurn(
   messages: ChatMessage[],
+  userId: string,
+  conversationId: string | undefined,
 ): AsyncGenerator<AgentEvent, { content: string; toolCalls: ToolCall[] }> {
   const stream = (await chatStream({
     messages,
@@ -127,6 +129,8 @@ async function* streamOneTurn(
 export async function* runAgent(
   userMessage: string,
   history: ChatMessage[] = [],
+  userId: string,
+  conversationId?: string,
 ): AsyncGenerator<AgentEvent> {
   const messages: ChatMessage[] = [
     { role: 'system', content: AGENT_SYSTEM_PROMPT },
@@ -137,9 +141,7 @@ export async function* runAgent(
   for (let iter = 0; iter < MAX_ITERATIONS; iter++) {
     let result: { content: string; toolCalls: ToolCall[] };
     try {
-      const gen = streamOneTurn(messages);
-      // Forward all events from the inner generator to the outer one
-      // while collecting the final return value.
+      const gen = streamOneTurn(messages, userId, conversationId);
       let next = await gen.next();
       while (!next.done) {
         yield next.value;
@@ -156,22 +158,17 @@ export async function* runAgent(
 
     const { content, toolCalls } = result;
 
-    // ── Path 1: tool calls ────────────────────────────────────────────
     if (toolCalls.length > 0) {
-      // If the LLM streamed any text alongside the tool call (a "thinking"
-      // preamble), commit it as a message first so the user sees it.
       if (content.length > 0) {
         yield { type: 'message_end', content };
       }
 
-      // Record the assistant turn (with tool_calls) in the message log.
       messages.push({
         role: 'assistant',
         content,
         tool_calls: toolCalls,
       });
 
-      // Execute each tool, yield events, append results.
       for (const tc of toolCalls) {
         const args = safeParse(tc.function.arguments);
 
@@ -182,7 +179,10 @@ export async function* runAgent(
           args,
         };
 
-        const r = await runTool(tc.function.name as ToolName, args);
+        const r = await runTool(tc.function.name as ToolName, args, {
+          userId,
+          conversationId,
+        });
 
         yield {
           type: 'tool_end',
@@ -200,11 +200,9 @@ export async function* runAgent(
         });
       }
 
-      // Loop back: ask LLM again with tool results included.
       continue;
     }
 
-    // ── Path 2: final text response (already streamed token-by-token) ─
     if (content.length > 0) {
       yield { type: 'message_end', content };
     }

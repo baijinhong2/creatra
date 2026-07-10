@@ -15,7 +15,7 @@ import { getDb, TABLE } from './db';
 // ─── Tool context / result types ─────────────────────────────────────────
 
 type ToolContext = {
-  userId?: string;
+  userId: string;
   conversationId?: string;
 };
 
@@ -27,13 +27,16 @@ type ToolResult = {
 
 // ─── Preference helpers (Supabase vp_user_preferences, KV model) ────────
 
-async function readPref(key: string): Promise<unknown | null> {
+async function readPref(
+  userId: string,
+  key: string,
+): Promise<unknown | null> {
   const db = getDb();
   if (!db) return null;
   try {
     const r = await db.query<{ value: unknown }>(
-      `SELECT value FROM ${TABLE.preferences} WHERE key = $1`,
-      [key],
+      `SELECT value FROM ${TABLE.preferences} WHERE user_id = $1 AND key = $2`,
+      [userId, key],
     );
     return r.rows[0]?.value ?? null;
   } catch {
@@ -41,15 +44,19 @@ async function readPref(key: string): Promise<unknown | null> {
   }
 }
 
-async function writePref(key: string, value: unknown): Promise<boolean> {
+async function writePref(
+  userId: string,
+  key: string,
+  value: unknown,
+): Promise<boolean> {
   const db = getDb();
   if (!db) return false;
   try {
     await db.query(
-      `INSERT INTO ${TABLE.preferences} (key, value, updated_at)
-       VALUES ($1, $2::jsonb, now())
-       ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value, updated_at = now()`,
-      [key, JSON.stringify(value)],
+      `INSERT INTO ${TABLE.preferences} (user_id, key, value, updated_at)
+       VALUES ($1, $2, $3::jsonb, now())
+       ON CONFLICT (user_id, key) DO UPDATE SET value = EXCLUDED.value, updated_at = now()`,
+      [userId, key, JSON.stringify(value)],
     );
     return true;
   } catch (e) {
@@ -59,10 +66,11 @@ async function writePref(key: string, value: unknown): Promise<boolean> {
 }
 
 async function getCred(
+  userId: string,
   prefKey: string,
   envKey: string,
 ): Promise<string | null> {
-  const fromPref = await readPref(prefKey);
+  const fromPref = await readPref(userId, prefKey);
   if (typeof fromPref === 'string' && fromPref.length > 0) return fromPref;
   const env = process.env[envKey];
   return env && env.length > 0 ? env : null;
@@ -70,8 +78,12 @@ async function getCred(
 
 // ─── Tool implementations ────────────────────────────────────────────────
 
-async function tavilySearch(query: string, maxResults = 5): Promise<ToolResult> {
-  const apiKey = await getCred('tavily.key', 'TAVILY_API_KEY');
+async function tavilySearch(
+  userId: string,
+  query: string,
+  maxResults = 5,
+): Promise<ToolResult> {
+  const apiKey = await getCred(userId, 'tavily.key', 'TAVILY_API_KEY');
   if (!apiKey) {
     return {
       ok: false,
@@ -114,6 +126,7 @@ async function tavilySearch(query: string, maxResults = 5): Promise<ToolResult> 
 }
 
 async function githubRead(
+  userId: string,
   owner: string,
   repo: string,
   path = 'README.md',
@@ -122,7 +135,7 @@ async function githubRead(
     Accept: 'application/vnd.github+json',
     'User-Agent': 'viralpost-agent',
   };
-  const token = await getCred('github.token', 'GITHUB_TOKEN');
+  const token = await getCred(userId, 'github.token', 'GITHUB_TOKEN');
   if (token) headers.Authorization = `Bearer ${token}`;
   try {
     const r = await fetch(
@@ -157,11 +170,12 @@ async function githubRead(
 }
 
 async function twitterApi(
+  userId: string,
   endpoint: 'search' | 'user-tweets',
   params: Record<string, string>,
 ): Promise<ToolResult> {
-  const authToken = await getCred('x.auth_token', 'X_AUTH_TOKEN');
-  const ct0 = await getCred('x.ct0', 'X_CT0');
+  const authToken = await getCred(userId, 'x.auth_token', 'X_AUTH_TOKEN');
+  const ct0 = await getCred(userId, 'x.ct0', 'X_CT0');
   if (!authToken || !ct0) {
     return {
       ok: false,
@@ -195,13 +209,13 @@ async function twitterApi(
       const userIdJson = (await userIdRes.json()) as {
         data?: { user?: { result?: { rest_id?: string } } };
       };
-      const userId = userIdJson.data?.user?.result?.rest_id;
-      if (!userId) return { ok: false, error: 'User not found' };
+      const restId = userIdJson.data?.user?.result?.rest_id;
+      if (!restId) return { ok: false, error: 'User not found' };
 
       const tweetsRes = await fetch(
         `https://api.twitter.com/graphql/E3opETHurmVJflFsUBVuQ/UserTweets?variables=${encodeURIComponent(
           JSON.stringify({
-            userId,
+            userId: restId,
             count: Number(params.count ?? 10),
             includePromotedContent: false,
             withQuickPromoteEligibilityTweetFields: true,
@@ -300,13 +314,14 @@ Format:
 }
 
 async function rememberPreference(
+  userId: string,
   key: string,
   value: unknown,
 ): Promise<ToolResult> {
   // Trim whitespace if value is a string.
   const clean =
     typeof value === 'string' ? value.trim() : value;
-  const ok = await writePref(key, clean);
+  const ok = await writePref(userId, key, clean);
   if (!ok) {
     return {
       ok: false,
@@ -319,22 +334,26 @@ async function rememberPreference(
   };
 }
 
-async function readPreferencesTool(keys?: string[]): Promise<ToolResult> {
+async function readPreferencesTool(
+  userId: string,
+  keys?: string[],
+): Promise<ToolResult> {
   const db = getDb();
   if (!db) return { ok: false, error: 'DB not available' };
   try {
     const r =
       keys && keys.length > 0
         ? await db.query<{ key: string; value: unknown; updated_at: unknown }>(
-            `SELECT key, value, updated_at FROM ${TABLE.preferences} WHERE key = ANY($1::text[])`,
-            [keys],
+            `SELECT key, value, updated_at FROM ${TABLE.preferences}
+             WHERE user_id = $1 AND key = ANY($2::text[])`,
+            [userId, keys],
           )
         : await db.query<{ key: string; value: unknown; updated_at: unknown }>(
-            `SELECT key, value, updated_at FROM ${TABLE.preferences} ORDER BY key`,
+            `SELECT key, value, updated_at FROM ${TABLE.preferences}
+             WHERE user_id = $1 ORDER BY key`,
+            [userId],
           );
     const redacted = r.rows.map((row) => {
-      // Redact the VALUE if the key looks like a secret so the LLM doesn't
-      // accidentally echo a raw token back into the chat.
       const isSecretKey =
         /\.(token|key|secret|auth_token|ct0|password)$/i.test(row.key);
       return {
@@ -473,27 +492,30 @@ export const TOOL_DEFINITIONS: ToolDefinition[] = [
 export async function runTool(
   name: ToolName,
   args: Record<string, unknown>,
-  _ctx: ToolContext = {},
+  ctx: ToolContext,
 ): Promise<ToolResult> {
+  const userId = ctx.userId;
   switch (name) {
     case 'web_search':
       return tavilySearch(
+        userId,
         String(args.query ?? ''),
         Number(args.max_results ?? 5),
       );
     case 'github_read':
       return githubRead(
+        userId,
         String(args.owner),
         String(args.repo),
         String(args.path ?? 'README.md'),
       );
     case 'twitter_search':
-      return twitterApi('search', {
+      return twitterApi(userId, 'search', {
         query: String(args.query ?? ''),
         count: String(args.count ?? 20),
       });
     case 'twitter_get_user_tweets':
-      return twitterApi('user-tweets', {
+      return twitterApi(userId, 'user-tweets', {
         username: String(args.username ?? ''),
         count: String(args.count ?? 10),
       });
@@ -503,9 +525,10 @@ export async function runTool(
         (args.language as 'zh' | 'en') ?? 'zh',
       );
     case 'remember_preference':
-      return rememberPreference(String(args.key ?? ''), args.value);
+      return rememberPreference(userId, String(args.key ?? ''), args.value);
     case 'read_preferences':
       return readPreferencesTool(
+        userId,
         Array.isArray(args.keys)
           ? (args.keys as unknown[]).map(String)
           : undefined,

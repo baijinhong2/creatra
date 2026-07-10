@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getDb, TABLE } from '@/lib/db';
+import { currentSessionIdServer, userFromSession } from '@/lib/auth';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -16,25 +17,22 @@ type MessageRow = {
 /**
  * GET /api/conversations/:id/messages
  *
- * Returns the message log for a single conversation, oldest → newest.
- * Used by the chat UI on mount to rehydrate after a page reload.
+ * Returns the message log for one of the current user's conversations,
+ * oldest → newest.
  */
 export async function GET(
   _request: NextRequest,
   { params }: { params: Promise<{ id: string }> },
 ) {
+  const sid = await currentSessionIdServer();
+  const user = await userFromSession(sid);
+  if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+
   const { id } = await params;
-  if (!id) {
-    return NextResponse.json({ error: 'id is required' }, { status: 400 });
-  }
+  if (!id) return NextResponse.json({ error: 'id required' }, { status: 400 });
 
   const db = getDb();
-  if (!db) {
-    return NextResponse.json(
-      { error: 'Database not configured' },
-      { status: 503 },
-    );
-  }
+  if (!db) return NextResponse.json({ error: 'DB not configured' }, { status: 503 });
 
   try {
     const convRes = await db.query<{
@@ -43,8 +41,9 @@ export async function GET(
       created_at: Date;
       updated_at: Date;
     }>(
-      `SELECT id, title, created_at, updated_at FROM ${TABLE.conversations} WHERE id = $1`,
-      [id],
+      `SELECT id, title, created_at, updated_at FROM ${TABLE.conversations}
+       WHERE id = $1 AND user_id = $2`,
+      [id, user.id],
     );
     const conv = convRes.rows[0];
     if (!conv) {
@@ -75,7 +74,6 @@ export async function GET(
       })),
     });
   } catch (e) {
-    console.error('[conversations] GET error', e);
     return NextResponse.json(
       { error: e instanceof Error ? e.message : 'unknown' },
       { status: 500 },
