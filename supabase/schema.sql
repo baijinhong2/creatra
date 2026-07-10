@@ -37,14 +37,21 @@ create table if not exists public.vp_messages (
 create index if not exists vp_messages_conv_created_idx
   on public.vp_messages (conversation_id, created_at);
 
+-- v2: KV-style preferences store. The agent reads here on every turn for
+-- credentials (e.g. github.token) and writes here when the user shares
+-- personal facts (account.niche, voice.tone, etc.). Tools in src/lib/tools.ts
+-- treat keys ending in `.token | .key | .secret | .auth_token | .ct0 |
+-- .password` as secret — values get redacted on read_preferences and in logs.
+create table if not exists public.vp_user_preferences (
+  key text primary key,
+  value jsonb not null,
+  updated_at timestamptz not null default now()
+);
+
 -- ========================================================================
--- Future tables (declared in src/lib/supabase.ts). Empty for now — uncomment
--- when the MVP features that read them ship.
+-- Future tables (declared in src/lib/supabase.ts). Uncomment when features ship.
 -- ========================================================================
 
--- v2: persistent account profile that survives across chats.
--- The agent writes to this when it learns things about the user (positioning,
--- niche, target audience, voice/tone, do/don't list).
 -- create table if not exists public.vp_account_profile (
 --   id uuid primary key default gen_random_uuid(),
 --   niche text,
@@ -52,14 +59,6 @@ create index if not exists vp_messages_conv_created_idx
 --   target_audience text,
 --   voice_tone text,
 --   language text default 'en',
---   updated_at timestamptz not null default now()
--- );
-
--- v2: user preferences (default output language, post frequency, watch list).
--- create table if not exists public.vp_user_preferences (
---   id uuid primary key default gen_random_uuid(),
---   key text unique not null,
---   value jsonb not null,
 --   updated_at timestamptz not null default now()
 -- );
 
@@ -113,6 +112,7 @@ create index if not exists vp_messages_conv_created_idx
 
 alter table public.vp_conversations enable row level security;
 alter table public.vp_messages enable row level security;
+alter table public.vp_user_preferences enable row level security;
 
 -- MVP policy: anon + service_role have full access. Tighten when auth is wired.
 drop policy if exists "vp_all_anon" on public.vp_conversations;
@@ -125,6 +125,13 @@ create policy "vp_all_anon"
 drop policy if exists "vp_all_anon" on public.vp_messages;
 create policy "vp_all_anon"
   on public.vp_messages
+  for all
+  to anon, authenticated, service_role
+  using (true) with check (true);
+
+drop policy if exists "vp_all_anon" on public.vp_user_preferences;
+create policy "vp_all_anon"
+  on public.vp_user_preferences
   for all
   to anon, authenticated, service_role
   using (true) with check (true);

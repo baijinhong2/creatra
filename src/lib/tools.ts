@@ -1,13 +1,18 @@
 /**
  * Tools available to the viralpost agent.
  * Each tool is described in the format DeepSeek's function-calling expects.
- * Implementation lives in the same file to keep things compact in MVP.
+ *
+ * All API credentials are read from `vp_user_preferences` (Supabase KV) FIRST,
+ * then fall back to `process.env.*`. This means the user can paste a new
+ * GitHub token (or rotate X cookies) right in the chat, and the LLM picks
+ * it up via the `remember_preference` tool without redeployment.
  */
 
 import type { ToolDefinition } from './llm';
 import { deepseek } from './llm';
+import { getDb, TABLE } from './db';
 
-// ─── Tool implementations ────────────────────────────────────────────────
+// ─── Tool context / result types ─────────────────────────────────────────
 
 type ToolContext = {
   userId?: string;
@@ -20,10 +25,58 @@ type ToolResult = {
   error?: string;
 };
 
+// ─── Preference helpers (Supabase vp_user_preferences, KV model) ────────
+
+async function readPref(key: string): Promise<unknown | null> {
+  const db = getDb();
+  if (!db) return null;
+  try {
+    const r = await db.query<{ value: unknown }>(
+      `SELECT value FROM ${TABLE.preferences} WHERE key = $1`,
+      [key],
+    );
+    return r.rows[0]?.value ?? null;
+  } catch {
+    return null;
+  }
+}
+
+async function writePref(key: string, value: unknown): Promise<boolean> {
+  const db = getDb();
+  if (!db) return false;
+  try {
+    await db.query(
+      `INSERT INTO ${TABLE.preferences} (key, value, updated_at)
+       VALUES ($1, $2::jsonb, now())
+       ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value, updated_at = now()`,
+      [key, JSON.stringify(value)],
+    );
+    return true;
+  } catch (e) {
+    console.error('[prefs] write failed', key, e);
+    return false;
+  }
+}
+
+async function getCred(
+  prefKey: string,
+  envKey: string,
+): Promise<string | null> {
+  const fromPref = await readPref(prefKey);
+  if (typeof fromPref === 'string' && fromPref.length > 0) return fromPref;
+  const env = process.env[envKey];
+  return env && env.length > 0 ? env : null;
+}
+
+// ─── Tool implementations ────────────────────────────────────────────────
+
 async function tavilySearch(query: string, maxResults = 5): Promise<ToolResult> {
-  const apiKey = process.env.TAVILY_API_KEY;
+  const apiKey = await getCred('tavily.key', 'TAVILY_API_KEY');
   if (!apiKey) {
-    return { ok: false, error: 'TAVILY_API_KEY not set' };
+    return {
+      ok: false,
+      error: 'No Tavily key. Tell the user to add one in Sources, or call remember_preference(key="tavily.key", value="tvly-...").',
+    };
   }
   try {
     const r = await fetch('https://api.tavily.com/search', {
@@ -48,10 +101,10 @@ async function tavilySearch(query: string, maxResults = 5): Promise<ToolResult> 
       ok: true,
       data: {
         answer: data.answer,
-        results: (data.results ?? []).map((r) => ({
-          title: r.title,
-          url: r.url,
-          snippet: r.content.slice(0, 300),
+        results: (data.results ?? []).map((rr) => ({
+          title: rr.title,
+          url: rr.url,
+          snippet: rr.content.slice(0, 300),
         })),
       },
     };
@@ -69,9 +122,8 @@ async function githubRead(
     Accept: 'application/vnd.github+json',
     'User-Agent': 'viralpost-agent',
   };
-  if (process.env.GITHUB_TOKEN) {
-    headers.Authorization = `Bearer ${process.env.GITHUB_TOKEN}`;
-  }
+  const token = await getCred('github.token', 'GITHUB_TOKEN');
+  if (token) headers.Authorization = `Bearer ${token}`;
   try {
     const r = await fetch(
       `https://api.github.com/repos/${owner}/${repo}/contents/${path}`,
@@ -80,7 +132,11 @@ async function githubRead(
     if (!r.ok) {
       return { ok: false, error: `GitHub API HTTP ${r.status}` };
     }
-    const data = (await r.json()) as { content?: string; encoding?: string; name?: string };
+    const data = (await r.json()) as {
+      content?: string;
+      encoding?: string;
+      name?: string;
+    };
     if (data.encoding === 'base64' && data.content) {
       const decoded = Buffer.from(data.content, 'base64').toString('utf-8');
       return {
@@ -100,56 +156,20 @@ async function githubRead(
   }
 }
 
-async function localProjectRead(path: string): Promise<ToolResult> {
-  // MVP: only supports file paths under user's home / common project roots.
-  // Sandbox this in production. For now, read from /Users/<user>/projects/*
-  // or accept absolute paths the user has explicitly registered.
-  const allowedRoots = [
-    '/Users/',
-    '/home/',
-    process.cwd(),
-  ];
-  if (!allowedRoots.some((root) => path.startsWith(root))) {
-    return { ok: false, error: `Path not in allowed roots: ${path}` };
-  }
-  try {
-    const fs = await import('node:fs/promises');
-    const stat = await fs.stat(path);
-    if (!stat.isFile()) {
-      return { ok: false, error: 'Not a file' };
-    }
-    if (stat.size > 100_000) {
-      return { ok: false, error: `File too large (${stat.size} bytes, max 100k)` };
-    }
-    const content = await fs.readFile(path, 'utf-8');
-    return {
-      ok: true,
-      data: {
-        path,
-        size: stat.size,
-        content: content.slice(0, 4000),
-        truncated: content.length > 4000,
-      },
-    };
-  } catch (e) {
-    return { ok: false, error: e instanceof Error ? e.message : String(e) };
-  }
-}
-
 async function twitterApi(
   endpoint: 'search' | 'user-tweets',
   params: Record<string, string>,
 ): Promise<ToolResult> {
-  const authToken = process.env.X_AUTH_TOKEN;
-  const ct0 = process.env.X_CT0;
+  const authToken = await getCred('x.auth_token', 'X_AUTH_TOKEN');
+  const ct0 = await getCred('x.ct0', 'X_CT0');
   if (!authToken || !ct0) {
     return {
       ok: false,
-      error: 'X cookies not set; running in guest mode is not yet supported for search/timeline.',
+      error:
+        'X cookies not configured. Tell the user to add X_AUTH_TOKEN + X_CT0 in Sources, or via remember_preference(key="x.auth_token" / "x.ct0", value=...).',
     };
   }
 
-  // Step 1: activate guest token (or use cookie auth directly)
   const headers: Record<string, string> = {
     'User-Agent':
       'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/129.0.0.0 Safari/537.36',
@@ -166,7 +186,6 @@ async function twitterApi(
     if (endpoint === 'user-tweets') {
       const username = params.username;
       if (!username) return { ok: false, error: 'username required' };
-      // UserByScreenName → UserTweets (same approach as drawspark's x-content-agent)
       const userIdRes = await fetch(
         `https://api.twitter.com/graphql/G3KGOASz96M-Qu0nwmGXNg/UserByScreenName?variables=${encodeURIComponent(
           JSON.stringify({ screen_name: username, withSafetyModeUserFields: true }),
@@ -194,7 +213,6 @@ async function twitterApi(
       );
       data = await tweetsRes.json();
     } else {
-      // Search via the GraphQL SearchTimeline endpoint
       const query = params.query;
       if (!query) return { ok: false, error: 'query required' };
       const searchRes = await fetch(
@@ -220,7 +238,6 @@ async function suggestSimilarCreators(
   accountContext: string,
   language: 'zh' | 'en' = 'zh',
 ): Promise<ToolResult> {
-  // Use DeepSeek itself to suggest creators — needs at least API key
   if (!process.env.DEEPSEEK_API_KEY) {
     return { ok: false, error: 'DEEPSEEK_API_KEY not set' };
   }
@@ -266,16 +283,71 @@ Format:
       temperature: 0.7,
       max_tokens: 1500,
     });
-    const content = r.choices[0]?.message?.content;
+    const content = (r as any).choices?.[0]?.message?.content;
     if (!content) return { ok: false, error: 'Empty LLM response' };
     try {
       const parsed = JSON.parse(content);
-      // Some models wrap in { suggestions: [...] }; unwrap if so.
-      const list = Array.isArray(parsed) ? parsed : (parsed.suggestions ?? parsed.creators ?? []);
+      const list = Array.isArray(parsed)
+        ? parsed
+        : (parsed.suggestions ?? parsed.creators ?? []);
       return { ok: true, data: list };
     } catch {
       return { ok: false, error: 'Invalid JSON from LLM' };
     }
+  } catch (e) {
+    return { ok: false, error: e instanceof Error ? e.message : String(e) };
+  }
+}
+
+async function rememberPreference(
+  key: string,
+  value: unknown,
+): Promise<ToolResult> {
+  // Trim whitespace if value is a string.
+  const clean =
+    typeof value === 'string' ? value.trim() : value;
+  const ok = await writePref(key, clean);
+  if (!ok) {
+    return {
+      ok: false,
+      error: 'Failed to save (DB unavailable or invalid value).',
+    };
+  }
+  return {
+    ok: true,
+    data: { key, saved: true },
+  };
+}
+
+async function readPreferencesTool(keys?: string[]): Promise<ToolResult> {
+  const db = getDb();
+  if (!db) return { ok: false, error: 'DB not available' };
+  try {
+    const r =
+      keys && keys.length > 0
+        ? await db.query<{ key: string; value: unknown; updated_at: unknown }>(
+            `SELECT key, value, updated_at FROM ${TABLE.preferences} WHERE key = ANY($1::text[])`,
+            [keys],
+          )
+        : await db.query<{ key: string; value: unknown; updated_at: unknown }>(
+            `SELECT key, value, updated_at FROM ${TABLE.preferences} ORDER BY key`,
+          );
+    const redacted = r.rows.map((row) => {
+      // Redact the VALUE if the key looks like a secret so the LLM doesn't
+      // accidentally echo a raw token back into the chat.
+      const isSecretKey =
+        /\.(token|key|secret|auth_token|ct0|password)$/i.test(row.key);
+      return {
+        key: row.key,
+        value: isSecretKey
+          ? row.value
+            ? '[REDACTED: set]'
+            : '[not set]'
+          : row.value,
+        updated_at: String(row.updated_at),
+      };
+    });
+    return { ok: true, data: redacted };
   } catch (e) {
     return { ok: false, error: e instanceof Error ? e.message : String(e) };
   }
@@ -286,16 +358,17 @@ Format:
 export type ToolName =
   | 'web_search'
   | 'github_read'
-  | 'local_project_read'
   | 'twitter_search'
   | 'twitter_get_user_tweets'
-  | 'suggest_similar_creators';
+  | 'suggest_similar_creators'
+  | 'remember_preference'
+  | 'read_preferences';
 
 export const TOOL_DEFINITIONS: ToolDefinition[] = [
   {
     name: 'web_search',
     description:
-      'Search the web for recent news, trends, and articles. Use when you need to know what is happening in the user\'s niche right now.',
+      "Search the web for recent news, trends, and articles. Use when you need to know what is happening in the user's niche right now. Requires a Tavily key (in preferences under 'tavily.key').",
     parameters: {
       type: 'object',
       properties: {
@@ -308,7 +381,7 @@ export const TOOL_DEFINITIONS: ToolDefinition[] = [
   {
     name: 'github_read',
     description:
-      'Read a file from a public GitHub repository. Use to learn what the user is building so their content can naturally reference it (build-in-public strategy).',
+      "Read a file from a public GitHub repository. Use to learn what the user is building so their content can naturally reference it (build-in-public strategy). Auth token (if any) is read from preferences 'github.token'.",
     parameters: {
       type: 'object',
       properties: {
@@ -320,21 +393,9 @@ export const TOOL_DEFINITIONS: ToolDefinition[] = [
     },
   },
   {
-    name: 'local_project_read',
-    description:
-      'Read a file from the user\'s local machine. Use for build-in-public context: read README, CHANGELOG, or recent commits.',
-    parameters: {
-      type: 'object',
-      properties: {
-        path: { type: 'string', description: 'Absolute file path' },
-      },
-      required: ['path'],
-    },
-  },
-  {
     name: 'twitter_search',
     description:
-      'Search recent tweets on X by keyword. Use to find trending discussions and angle ideas.',
+      "Search recent tweets on X by keyword. Use to find trending discussions and angle ideas. Requires X cookies (preferences 'x.auth_token' + 'x.ct0').",
     parameters: {
       type: 'object',
       properties: {
@@ -347,7 +408,7 @@ export const TOOL_DEFINITIONS: ToolDefinition[] = [
   {
     name: 'twitter_get_user_tweets',
     description:
-      'Fetch the most recent tweets of a given X user. Use to study a benchmark account\'s recent content.',
+      "Fetch the most recent tweets of a given X user. Use to study a benchmark account's recent content. Requires X cookies in preferences.",
     parameters: {
       type: 'object',
       properties: {
@@ -360,17 +421,51 @@ export const TOOL_DEFINITIONS: ToolDefinition[] = [
   {
     name: 'suggest_similar_creators',
     description:
-      'Given the user\'s account positioning, recommend 10 similar / benchmark X creators. Use when the user is unsure who to track.',
+      "Given the user's account positioning, recommend 10 similar / benchmark X creators. Use when the user is unsure who to track.",
     parameters: {
       type: 'object',
       properties: {
         account_context: {
           type: 'string',
-          description: 'The user\'s account positioning / niche',
+          description: "The user's account positioning / niche",
         },
         language: { type: 'string', description: '"zh" or "en", default "zh"' },
       },
       required: ['account_context'],
+    },
+  },
+  {
+    name: 'remember_preference',
+    description:
+      "Persist a key/value pair the user wants the agent to remember across sessions. Use when the user shares a personal fact, position, or credential. For secrets (tokens, API keys), use keys ending in '.token', '.key', or '.secret' — values will be redacted in logs and in subsequent read_preferences calls.",
+    parameters: {
+      type: 'object',
+      properties: {
+        key: {
+          type: 'string',
+          description:
+            "Lowercase dot-separated key, e.g. 'github.token', 'x.auth_token', 'account.niche'",
+        },
+        value: {
+          type: 'string',
+          description: 'Value to store (string for most cases)',
+        },
+      },
+      required: ['key', 'value'],
+    },
+  },
+  {
+    name: 'read_preferences',
+    description:
+      'Read stored preferences. Optional `keys` filter; omit to list all non-secret keys (secrets are redacted as "[REDACTED: set]").',
+    parameters: {
+      type: 'object',
+      properties: {
+        keys: {
+          type: 'array',
+          description: 'Optional list of keys to read. Omit for all.',
+        },
+      },
     },
   },
 ];
@@ -382,11 +477,16 @@ export async function runTool(
 ): Promise<ToolResult> {
   switch (name) {
     case 'web_search':
-      return tavilySearch(String(args.query ?? ''), Number(args.max_results ?? 5));
+      return tavilySearch(
+        String(args.query ?? ''),
+        Number(args.max_results ?? 5),
+      );
     case 'github_read':
-      return githubRead(String(args.owner), String(args.repo), String(args.path ?? 'README.md'));
-    case 'local_project_read':
-      return localProjectRead(String(args.path));
+      return githubRead(
+        String(args.owner),
+        String(args.repo),
+        String(args.path ?? 'README.md'),
+      );
     case 'twitter_search':
       return twitterApi('search', {
         query: String(args.query ?? ''),
@@ -401,6 +501,14 @@ export async function runTool(
       return suggestSimilarCreators(
         String(args.account_context ?? ''),
         (args.language as 'zh' | 'en') ?? 'zh',
+      );
+    case 'remember_preference':
+      return rememberPreference(String(args.key ?? ''), args.value);
+    case 'read_preferences':
+      return readPreferencesTool(
+        Array.isArray(args.keys)
+          ? (args.keys as unknown[]).map(String)
+          : undefined,
       );
     default:
       return { ok: false, error: `Unknown tool: ${name}` };

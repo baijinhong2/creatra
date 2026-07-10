@@ -2,10 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState } from 'react';
 
-// ─────────────────────────────────────────────────────────────────────
-// Types — kept local to this file so the UI doesn't depend on server-only
-// types from src/lib/*.
-// ─────────────────────────────────────────────────────────────────────
+// ─── Types ─────────────────────────────────────────────────────────────
 
 type DisplayMessage = {
   id: string;
@@ -47,14 +44,7 @@ type AgentEvent =
   | { type: 'error'; message: string }
   | { type: 'done' };
 
-/** localStorage key for the current conversation id. */
 const CONV_KEY = 'vp_conversation_id';
-
-// ─────────────────────────────────────────────────────────────────────
-// Suggested first prompts shown when the user opens the page with no history.
-// Picked to demonstrate the agent's capabilities and what it knows about
-// the user.
-// ─────────────────────────────────────────────────────────────────────
 
 const SUGGESTED_PROMPTS = [
   {
@@ -76,7 +66,342 @@ const SUGGESTED_PROMPTS = [
 ];
 
 // ─────────────────────────────────────────────────────────────────────
-// Main component
+// Sidebar
+// ─────────────────────────────────────────────────────────────────────
+
+type ConversationSummary = {
+  id: string;
+  title: string;
+  created_at: string;
+  updated_at: string;
+  message_count: number;
+};
+
+type Preference = {
+  key: string;
+  value: unknown;
+  is_secret: boolean;
+  has_value: boolean;
+  updated_at: string;
+};
+
+type Source = {
+  key: string;
+  label: string;
+  placeholder: string;
+  hint: string;
+};
+
+const SOURCES: Source[] = [
+  {
+    key: 'github.token',
+    label: 'GitHub token',
+    placeholder: 'ghp_xxx or gho_xxx',
+    hint: 'Used by github_read. Optional — without it you get 60 req/hour.',
+  },
+  {
+    key: 'tavily.key',
+    label: 'Tavily API key',
+    placeholder: 'tvly-xxx',
+    hint: 'Used by web_search. Get one at tavily.com.',
+  },
+  {
+    key: 'x.auth_token',
+    label: 'X (Twitter) auth_token',
+    placeholder: 'auth_token cookie value',
+    hint: 'Used by twitter_search / twitter_get_user_tweets. From browser devtools.',
+  },
+  {
+    key: 'x.ct0',
+    label: 'X (Twitter) ct0',
+    placeholder: 'ct0 cookie value',
+    hint: 'X CSRF token. Pairs with auth_token.',
+  },
+];
+
+function timeAgo(iso: string): string {
+  const t = new Date(iso).getTime();
+  const diff = Date.now() - t;
+  const min = Math.floor(diff / 60000);
+  if (min < 1) return 'just now';
+  if (min < 60) return `${min}m ago`;
+  const hr = Math.floor(min / 60);
+  if (hr < 24) return `${hr}h ago`;
+  const d = Math.floor(hr / 24);
+  if (d < 7) return `${d}d ago`;
+  return new Date(iso).toLocaleDateString();
+}
+
+function Sidebar({
+  conversations,
+  activeId,
+  onSelect,
+  onNew,
+  onRefresh,
+  onClose,
+}: {
+  conversations: ConversationSummary[];
+  activeId: string | null;
+  onSelect: (id: string) => void;
+  onNew: () => void;
+  onRefresh: () => void;
+  onClose: () => void;
+}) {
+  const [sourcesOpen, setSourcesOpen] = useState(false);
+  const [prefs, setPrefs] = useState<Preference[]>([]);
+  const [prefsLoading, setPrefsLoading] = useState(false);
+  const [editingKey, setEditingKey] = useState<string | null>(null);
+  const [editingValue, setEditingValue] = useState('');
+  const [savingKey, setSavingKey] = useState<string | null>(null);
+  const [statusMsg, setStatusMsg] = useState<string | null>(null);
+
+  const loadPrefs = useCallback(async () => {
+    setPrefsLoading(true);
+    try {
+      const r = await fetch('/api/preferences', { cache: 'no-store' });
+      if (r.ok) {
+        const data = (await r.json()) as { preferences: Preference[] };
+        setPrefs(data.preferences ?? []);
+      }
+    } catch {
+      // ignore
+    } finally {
+      setPrefsLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    if (sourcesOpen) loadPrefs();
+  }, [sourcesOpen, loadPrefs]);
+
+  const savePref = async (key: string, value: string) => {
+    setSavingKey(key);
+    setStatusMsg(null);
+    try {
+      const r = await fetch('/api/preferences', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ key, value }),
+      });
+      if (r.ok) {
+        setStatusMsg(`saved ${key}`);
+        setEditingKey(null);
+        setEditingValue('');
+        await loadPrefs();
+      } else {
+        const err = (await r.json()) as { error?: string };
+        setStatusMsg(`error: ${err.error ?? r.status}`);
+      }
+    } catch (e) {
+      setStatusMsg(`error: ${e instanceof Error ? e.message : String(e)}`);
+    } finally {
+      setSavingKey(null);
+    }
+  };
+
+  const forgetPref = async (key: string) => {
+    if (!confirm(`Forget ${key}?`)) return;
+    setSavingKey(key);
+    setStatusMsg(null);
+    try {
+      const r = await fetch(`/api/preferences?key=${encodeURIComponent(key)}`, {
+        method: 'DELETE',
+      });
+      if (r.ok) {
+        setStatusMsg(`forgot ${key}`);
+        await loadPrefs();
+      } else {
+        setStatusMsg(`error: HTTP ${r.status}`);
+      }
+    } catch (e) {
+      setStatusMsg(`error: ${e instanceof Error ? e.message : String(e)}`);
+    } finally {
+      setSavingKey(null);
+    }
+  };
+
+  const prefMap = new Map<string, Preference>(prefs.map((p) => [p.key, p]));
+
+  return (
+    <aside className="flex h-full w-full flex-col border-r border-zinc-800 bg-zinc-950 text-zinc-100">
+      {/* Header */}
+      <div className="flex items-center justify-between border-b border-zinc-800 px-4 py-3">
+        <div className="flex items-center gap-2">
+          <div className="flex h-7 w-7 items-center justify-center rounded-md bg-gradient-to-br from-violet-500 to-fuchsia-500 text-sm font-bold">
+            V
+          </div>
+          <span className="font-semibold tracking-tight">viralpost</span>
+        </div>
+        <button
+          onClick={onClose}
+          className="text-zinc-500 hover:text-zinc-300 lg:hidden"
+          aria-label="Close sidebar"
+        >
+          ✕
+        </button>
+      </div>
+
+      {/* New chat */}
+      <div className="px-3 pt-3">
+        <button
+          onClick={onNew}
+          className="flex w-full items-center justify-center gap-2 rounded-lg border border-zinc-700 bg-zinc-900 px-3 py-2 text-sm font-medium text-zinc-100 transition hover:border-violet-500/50 hover:bg-zinc-800"
+        >
+          <span className="text-base leading-none">+</span> New chat
+        </button>
+      </div>
+
+      {/* Conversations list */}
+      <div className="mt-4 flex-1 overflow-y-auto px-3">
+        <div className="mb-2 flex items-center justify-between">
+          <h3 className="text-[10px] font-medium uppercase tracking-wider text-zinc-500">
+            Recent
+          </h3>
+          <button
+            onClick={() => {
+              onRefresh();
+              if (sourcesOpen) loadPrefs();
+            }}
+            className="text-[10px] text-zinc-500 hover:text-zinc-300"
+            title="Refresh"
+          >
+            ↻
+          </button>
+        </div>
+        {conversations.length === 0 ? (
+          <p className="text-xs text-zinc-500">No chats yet — start one ↑</p>
+        ) : (
+          <div className="flex flex-col gap-1">
+            {conversations.map((c) => {
+              const isActive = c.id === activeId;
+              return (
+                <button
+                  key={c.id}
+                  onClick={() => onSelect(c.id)}
+                  className={`group flex flex-col items-start gap-0.5 rounded-lg border px-3 py-2 text-left text-sm transition ${
+                    isActive
+                      ? 'border-violet-500/40 bg-violet-500/10'
+                      : 'border-transparent hover:border-zinc-700 hover:bg-zinc-900'
+                  }`}
+                >
+                  <div className="line-clamp-2 w-full text-zinc-100">
+                    {c.title || 'Untitled'}
+                  </div>
+                  <div className="text-[10px] text-zinc-500">
+                    {c.message_count} {c.message_count === 1 ? 'msg' : 'msgs'}{' '}
+                    · {timeAgo(c.updated_at)}
+                  </div>
+                </button>
+              );
+            })}
+          </div>
+        )}
+      </div>
+
+      {/* Sources (collapsible) */}
+      <div className="border-t border-zinc-800 px-3 pb-3 pt-2">
+        <button
+          onClick={() => setSourcesOpen((o) => !o)}
+          className="flex w-full items-center justify-between rounded px-1 py-1.5 text-[10px] font-medium uppercase tracking-wider text-zinc-500 hover:text-zinc-300"
+        >
+          <span>Sources</span>
+          <span>{sourcesOpen ? '▾' : '▸'}</span>
+        </button>
+        {sourcesOpen && (
+          <div className="mt-2 space-y-3">
+            {prefsLoading && (
+              <div className="text-[10px] text-zinc-500">loading…</div>
+            )}
+            {SOURCES.map((src) => {
+              const pref = prefMap.get(src.key);
+              const isSet = pref?.has_value ?? false;
+              const isEditing = editingKey === src.key;
+              const isSaving = savingKey === src.key;
+              return (
+                <div key={src.key} className="space-y-1">
+                  <div className="flex items-center justify-between">
+                    <label className="text-xs font-medium text-zinc-300">
+                      {src.label}
+                    </label>
+                    <span
+                      className={`text-[10px] ${
+                        isSet ? 'text-emerald-400' : 'text-zinc-500'
+                      }`}
+                    >
+                      {isSet ? '● set' : '○ not set'}
+                    </span>
+                  </div>
+                  {isEditing ? (
+                    <div className="flex gap-1">
+                      <input
+                        type="password"
+                        value={editingValue}
+                        onChange={(e) => setEditingValue(e.target.value)}
+                        placeholder={src.placeholder}
+                        className="flex-1 rounded border border-zinc-700 bg-zinc-900 px-2 py-1 font-mono text-[11px] text-zinc-100 focus:border-violet-500/50 focus:outline-none"
+                        autoFocus
+                      />
+                      <button
+                        onClick={() => savePref(src.key, editingValue)}
+                        disabled={isSaving || !editingValue}
+                        className="rounded bg-violet-600 px-2 py-1 text-[10px] font-medium text-white hover:bg-violet-500 disabled:opacity-40"
+                      >
+                        {isSaving ? '…' : 'Save'}
+                      </button>
+                      <button
+                        onClick={() => {
+                          setEditingKey(null);
+                          setEditingValue('');
+                        }}
+                        className="rounded bg-zinc-800 px-2 py-1 text-[10px] text-zinc-400 hover:bg-zinc-700"
+                      >
+                        ✕
+                      </button>
+                    </div>
+                  ) : (
+                    <div className="flex gap-1">
+                      <code className="flex-1 truncate rounded border border-zinc-800 bg-zinc-900/50 px-2 py-1 font-mono text-[11px] text-zinc-500">
+                        {isSet ? src.key : `(empty: ${src.key})`}
+                      </code>
+                      <button
+                        onClick={() => {
+                          setEditingKey(src.key);
+                          setEditingValue('');
+                        }}
+                        disabled={isSaving}
+                        className="rounded bg-zinc-800 px-2 py-1 text-[10px] text-zinc-300 hover:bg-zinc-700"
+                      >
+                        {isSet ? 'Replace' : 'Add'}
+                      </button>
+                      {isSet && (
+                        <button
+                          onClick={() => forgetPref(src.key)}
+                          disabled={isSaving}
+                          className="rounded bg-zinc-800 px-2 py-1 text-[10px] text-zinc-400 hover:bg-red-900/40 hover:text-red-200"
+                        >
+                          Forget
+                        </button>
+                      )}
+                    </div>
+                  )}
+                  <p className="text-[10px] leading-snug text-zinc-600">
+                    {src.hint}
+                  </p>
+                </div>
+              );
+            })}
+            {statusMsg && (
+              <div className="text-[10px] text-violet-400">{statusMsg}</div>
+            )}
+          </div>
+        )}
+      </div>
+    </aside>
+  );
+}
+
+// ─────────────────────────────────────────────────────────────────────
+// Main page
 // ─────────────────────────────────────────────────────────────────────
 
 export default function Home() {
@@ -88,25 +413,93 @@ export default function Home() {
   const [toolCalls, setToolCalls] = useState<ToolCallDisplay[]>([]);
   const [error, setError] = useState<string | null>(null);
 
-  // ── Persistence (localStorage ↔ Supabase) ──
   const [conversationId, setConversationId] = useState<string | null>(null);
   const [hydrationDone, setHydrationDone] = useState(false);
+
+  const [sidebarOpen, setSidebarOpen] = useState(true);
+  const [conversations, setConversations] = useState<ConversationSummary[]>(
+    [],
+  );
 
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
   const abortRef = useRef<AbortController | null>(null);
-  // Mirror conversationId in a ref so send() reads the latest value without
-  // making it a useCallback dep (which would re-create send on every change).
   const conversationIdRef = useRef<string | null>(null);
+
   useEffect(() => {
     conversationIdRef.current = conversationId;
   }, [conversationId]);
 
-  // On mount: read localStorage, ask Supabase for the saved conversation,
-  // pre-populate messages so a page reload resumes the chat.
+  // ── Load conversation list (also after every send) ──
+  const refreshConversations = useCallback(async () => {
+    try {
+      const r = await fetch('/api/conversations', { cache: 'no-store' });
+      if (r.ok) {
+        const data = (await r.json()) as { conversations: ConversationSummary[] };
+        setConversations(data.conversations ?? []);
+      }
+    } catch {
+      // ignore
+    }
+  }, []);
+
+  // ── Switch to a specific conversation ──
+  const switchToConversation = useCallback(async (id: string) => {
+    if (typeof window === 'undefined') return;
+    window.localStorage.setItem(CONV_KEY, id);
+    setConversationId(id);
+    setError(null);
+    setToolCalls([]);
+    setStreamingText('');
+    setStatus('idle');
+
+    try {
+      const r = await fetch(`/api/conversations/${id}/messages`, {
+        cache: 'no-store',
+      });
+      if (!r.ok) {
+        setMessages([]);
+        return;
+      }
+      const data = (await r.json()) as {
+        messages?: Array<{
+          id: string;
+          role: 'user' | 'assistant';
+          content: string | null;
+        }>;
+      };
+      const restored: DisplayMessage[] = (data.messages ?? [])
+        .filter((m) => m.role === 'user' || m.role === 'assistant')
+        .map((m) => ({
+          id: m.id,
+          role: m.role,
+          content: m.content ?? '',
+        }));
+      setMessages(restored);
+    } catch {
+      setMessages([]);
+    }
+  }, []);
+
+  // ── New chat: clear local + server assigns new id on next message ──
+  const startNewChat = useCallback(() => {
+    if (typeof window !== 'undefined') {
+      window.localStorage.removeItem(CONV_KEY);
+    }
+    setConversationId(null);
+    setMessages([]);
+    setToolCalls([]);
+    setError(null);
+    setStreamingText('');
+    setStatus('idle');
+  }, []);
+
+  // ── On mount: load localStorage → fetch history + load conv list ──
   useEffect(() => {
     if (typeof window === 'undefined') return;
     const saved = window.localStorage.getItem(CONV_KEY);
+    refreshConversations();
+
     if (!saved) {
       setHydrationDone(true);
       return;
@@ -118,7 +511,6 @@ export default function Home() {
           cache: 'no-store',
         });
         if (r.status === 404) {
-          // Stale id — clear it and start fresh.
           window.localStorage.removeItem(CONV_KEY);
           setConversationId(null);
           return;
@@ -148,14 +540,14 @@ export default function Home() {
         setHydrationDone(true);
       }
     })();
-  }, []);
+  }, [refreshConversations]);
 
-  // Auto-scroll to bottom whenever content changes
+  // Auto-scroll
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [messages, streamingText, toolCalls]);
 
-  // Auto-grow textarea up to ~6 rows
+  // Auto-grow textarea
   useEffect(() => {
     const el = inputRef.current;
     if (!el) return;
@@ -163,7 +555,7 @@ export default function Home() {
     el.style.height = `${Math.min(el.scrollHeight, 200)}px`;
   }, [input]);
 
-  // ── Send ────────────────────────────────────────────────────────────
+  // ── Send ─────────────────────────────────────────────────────────────
   const send = useCallback(
     async (text: string) => {
       const trimmed = text.trim();
@@ -178,8 +570,10 @@ export default function Home() {
         content: trimmed,
       };
 
-      // Optimistically add user message; compute history BEFORE pushing it.
-      const history = messages.map((m) => ({ role: m.role, content: m.content }));
+      const history = messages.map((m) => ({
+        role: m.role,
+        content: m.content,
+      }));
       const nextMessages = [...messages, userMsg];
       setMessages(nextMessages);
       setInput('');
@@ -217,7 +611,6 @@ export default function Home() {
           if (done) break;
           buffer += decoder.decode(value, { stream: true });
 
-          // SSE: events separated by \n\n
           let sep;
           while ((sep = buffer.indexOf('\n\n')) !== -1) {
             const rawEvent = buffer.slice(0, sep);
@@ -236,10 +629,13 @@ export default function Home() {
             handleAgentEvent(evt, streamId);
           }
         }
+
+        // After stream closes, refresh conversation list (title may have updated,
+        // new conversation may have been created).
+        refreshConversations();
       } catch (e) {
         if ((e as Error).name === 'AbortError') {
-          // user cancelled — final stream text still counts as the assistant message
-          flushStreamingMessage(streamId);
+          // user cancelled
         } else {
           setError(e instanceof Error ? e.message : String(e));
         }
@@ -254,7 +650,6 @@ export default function Home() {
     [messages, status],
   );
 
-  // Centralized event handler — kept outside render so React doesn't re-create it
   const handleAgentEvent = useCallback(
     (evt: AgentEvent, streamId: string) => {
       switch (evt.type) {
@@ -298,42 +693,27 @@ export default function Home() {
         case 'message_delta':
           setStreamingText((prev) => prev + evt.content);
           break;
-        case 'message_end': {
+        case 'message_end':
           setMessages((prev) => [
             ...prev,
             { id: streamId, role: 'assistant', content: evt.content },
           ]);
           setStreamingText('');
           break;
-        }
         case 'error':
           setError(evt.message);
           break;
         case 'done':
-          // nothing — `done` just signals the server loop ended normally;
-          // tool calls may still be displayed in the UI after the stream closes.
           break;
       }
     },
     [],
   );
 
-  // If the stream ends WITHOUT a message_end (e.g. abort), keep whatever
-  // streamed text we have as the assistant message.
-  const flushStreamingMessage = useCallback((streamId: string) => {
-    setMessages((prev) => {
-      if (prev.find((m) => m.id === streamId)) return prev;
-      // ...
-      return prev;
-    });
-  }, []);
-
-  // ── Stop button ────────────────────────────────────────────────────
   const stop = useCallback(() => {
     abortRef.current?.abort();
   }, []);
 
-  // ── Submit handlers ────────────────────────────────────────────────
   const handleSubmit = (e?: React.FormEvent) => {
     e?.preventDefault();
     if (input.trim()) send(input);
@@ -350,71 +730,77 @@ export default function Home() {
     hydrationDone && messages.length === 0 && toolCalls.length === 0;
 
   return (
-    <div className="flex h-full min-h-screen flex-col bg-zinc-950 text-zinc-100">
-      <Header />
-
-      <main className="flex-1 overflow-y-auto">
-        <div className="mx-auto w-full max-w-3xl px-4 py-8 sm:py-12">
-          {isEmpty ? (
-            <EmptyState onPick={(p) => send(p)} />
-          ) : (
-            <MessageList
-              messages={messages}
-              toolCalls={toolCalls}
-              streamingId={streamingId}
-              streamingText={streamingText}
-              status={status}
-              error={error}
-            />
-          )}
-          <div ref={messagesEndRef} />
+    <div className="flex h-full min-h-screen bg-zinc-950 text-zinc-100">
+      {sidebarOpen && (
+        <div className="w-72 shrink-0 lg:w-80">
+          <Sidebar
+            conversations={conversations}
+            activeId={conversationId}
+            onSelect={switchToConversation}
+            onNew={startNewChat}
+            onRefresh={refreshConversations}
+            onClose={() => setSidebarOpen(false)}
+          />
         </div>
-      </main>
+      )}
 
-      <Composer
-        input={input}
-        setInput={setInput}
-        status={status}
-        onSubmit={handleSubmit}
-        onStop={stop}
-        onKeyDown={handleKeyDown}
-        inputRef={inputRef}
-      />
+      <div className="flex flex-1 flex-col">
+        {/* Top bar */}
+        <header className="flex items-center justify-between border-b border-zinc-800/80 bg-zinc-950/80 px-4 py-3 backdrop-blur">
+          <div className="flex items-center gap-2">
+            {!sidebarOpen && (
+              <button
+                onClick={() => setSidebarOpen(true)}
+                className="rounded-md border border-zinc-800 px-2 py-1 text-xs text-zinc-400 hover:border-zinc-700 hover:text-zinc-200"
+              >
+                ☰
+              </button>
+            )}
+            <span className="text-xs text-zinc-500">
+              {conversationId ? 'Chat' : 'New chat'}
+            </span>
+          </div>
+          <div className="flex items-center gap-3 text-xs text-zinc-500">
+            <span className="hidden sm:inline">MVP build</span>
+            <span className="hidden h-1 w-1 rounded-full bg-emerald-500 sm:inline-block" />
+            <span className="hidden sm:inline">v0.2</span>
+          </div>
+        </header>
+
+        <main className="flex-1 overflow-y-auto">
+          <div className="mx-auto w-full max-w-3xl px-4 py-8 sm:py-12">
+            {isEmpty ? (
+              <EmptyState onPick={(p) => send(p)} />
+            ) : (
+              <MessageList
+                messages={messages}
+                toolCalls={toolCalls}
+                streamingId={streamingId}
+                streamingText={streamingText}
+                status={status}
+                error={error}
+              />
+            )}
+            <div ref={messagesEndRef} />
+          </div>
+        </main>
+
+        <Composer
+          input={input}
+          setInput={setInput}
+          status={status}
+          onSubmit={handleSubmit}
+          onStop={stop}
+          onKeyDown={handleKeyDown}
+          inputRef={inputRef}
+        />
+      </div>
     </div>
   );
 }
 
 // ─────────────────────────────────────────────────────────────────────
-// Header
-// ─────────────────────────────────────────────────────────────────────
-
-function Header() {
-  return (
-    <header className="border-b border-zinc-800/80 bg-zinc-950/80 backdrop-blur sticky top-0 z-10">
-      <div className="mx-auto flex max-w-3xl items-center justify-between px-4 py-3">
-        <div className="flex items-center gap-2">
-          <div className="flex h-7 w-7 items-center justify-center rounded-md bg-gradient-to-br from-violet-500 to-fuchsia-500 text-sm font-bold">
-            V
-          </div>
-          <div className="flex flex-col leading-tight">
-            <span className="font-semibold tracking-tight">viralpost</span>
-            <span className="text-[10px] uppercase tracking-wider text-zinc-500">
-              X growth agent
-            </span>
-          </div>
-        </div>
-        <div className="flex items-center gap-2 text-xs text-zinc-500">
-          <span className="hidden sm:inline">MVP build</span>
-          <span className="hidden h-1 w-1 rounded-full bg-emerald-500 sm:inline-block" />
-          <span className="hidden sm:inline">v0.1</span>
-        </div>
-      </div>
-    </header>
-  );
-}
-
-// ─────────────────────────────────────────────────────────────────────
-// Empty state — first impression. Asks the user what they want.
+// Empty state
 // ─────────────────────────────────────────────────────────────────────
 
 function EmptyState({ onPick }: { onPick: (text: string) => void }) {
@@ -427,9 +813,9 @@ function EmptyState({ onPick }: { onPick: (text: string) => void }) {
         Hi — I'm your X growth agent.
       </h1>
       <p className="mt-3 max-w-md text-sm text-zinc-400 sm:text-base">
-        I can search X and the web, look at your GitHub and local projects, watch
-        creators you admire, and write tweets with you. Pick a starter, or just say
-        what you need.
+        I can search X and the web, look at your GitHub, watch creators you
+        admire, and write tweets with you. Pick a starter, or just say what you
+        need.
       </p>
 
       <div className="mt-8 grid w-full max-w-2xl grid-cols-1 gap-2 sm:grid-cols-2">
@@ -451,7 +837,7 @@ function EmptyState({ onPick }: { onPick: (text: string) => void }) {
 }
 
 // ─────────────────────────────────────────────────────────────────────
-// Message list — interleaves user/assistant bubbles with tool-call cards.
+// Message list / bubbles / tool cards / composer
 // ─────────────────────────────────────────────────────────────────────
 
 function MessageList({
@@ -469,8 +855,6 @@ function MessageList({
   status: 'idle' | 'streaming';
   error: string | null;
 }) {
-  // Attach tool calls to the assistant message they precede. For MVP, just
-  // render them in chronological order alongside the messages.
   const items: Array<
     | { kind: 'message'; msg: DisplayMessage }
     | { kind: 'streaming-bubble'; streamId: string; text: string }
@@ -478,12 +862,8 @@ function MessageList({
     | { kind: 'error'; text: string }
   > = [];
 
-  for (const m of messages) {
-    items.push({ kind: 'message', msg: m });
-  }
-  for (const tc of toolCalls) {
-    items.push({ kind: 'tool', tool: tc });
-  }
+  for (const m of messages) items.push({ kind: 'message', msg: m });
+  for (const tc of toolCalls) items.push({ kind: 'tool', tool: tc });
   if (status === 'streaming' && streamingId) {
     items.push({
       kind: 'streaming-bubble',
@@ -491,12 +871,8 @@ function MessageList({
       text: streamingText,
     });
   }
-  if (error) {
-    items.push({ kind: 'error', text: error });
-  }
+  if (error) items.push({ kind: 'error', text: error });
 
-  // Reorder by startedAt where possible — simpler: tool calls interleaved in
-  // arrival order, which matches what the SSE stream emitted.
   return (
     <div className="flex flex-col gap-6">
       {items.map((it, i) => {
@@ -522,10 +898,6 @@ function MessageList({
     </div>
   );
 }
-
-// ─────────────────────────────────────────────────────────────────────
-// Bubbles
-// ─────────────────────────────────────────────────────────────────────
 
 function Bubble({ msg }: { msg: DisplayMessage }) {
   if (msg.role === 'user') {
@@ -560,10 +932,6 @@ function AssistantStreamBubble({
     </div>
   );
 }
-
-// ─────────────────────────────────────────────────────────────────────
-// Tool card — collapsible card showing args + result
-// ─────────────────────────────────────────────────────────────────────
 
 function ToolCard({ tool }: { tool: ToolCallDisplay }) {
   const [open, setOpen] = useState(false);
@@ -614,10 +982,6 @@ function StatusDot({ status }: { status: ToolCallDisplay['status'] }) {
         : 'bg-red-400';
   return <span className={`inline-block h-2 w-2 rounded-full ${color}`} />;
 }
-
-// ─────────────────────────────────────────────────────────────────────
-// Composer — input area stuck to the bottom
-// ─────────────────────────────────────────────────────────────────────
 
 function Composer({
   input,
