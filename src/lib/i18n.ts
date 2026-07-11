@@ -68,8 +68,21 @@ const dict = {
   'prompt.strategy.body': { zh: '结合对标和我的项目,给我 3 个内容 pillar + 更新频次/时段/形式的策略。', en: 'Combine my watchlist and my projects into a strategy: 3 content pillars + frequency + format mix.' },
   'prompt.daily.title': { zh: '今天发什么', en: "Today's tweets" },
   'prompt.daily.body': { zh: '今天发什么推文?给我 3 条直接可发的,带配图说明。', en: "Plan today's tweets. Give me 3 publishable ones with image guidance." },
+  'prompt.replies.title': { zh: '看评论 / 写回复', en: 'Triage my comments' },
+  'prompt.replies.body': { zh: '帮我看我最近推文下面的评论,哪些值得回,你给我直接能发的回复。', en: 'Look at the comments on my recent tweets — which deserve a reply, and draft a publishable one.' },
+  'prompt.engage.title': { zh: '竞品互动', en: 'Engage competitors' },
+  'prompt.engage.body': { zh: '看 @xxx 最近发了啥,挑值得我评论的去互动,给我直接能发的评论。', en: "Look at @xxx's recent tweets. Pick the ones worth engaging with and draft a publishable comment for each." },
   'prompt.analytics.title': { zh: '我的数据', en: 'My analytics' },
   'prompt.analytics.body': { zh: '看我最近 20 条推文表现,哪些火、哪些没火、下周该调整啥。', en: 'Look at my last 20 tweets — which worked, which didnt, what to change next week.' },
+
+  // User menu popover
+  'menu.theme': { zh: '外观', en: 'Theme' },
+  'menu.theme.light': { zh: '明亮', en: 'Light' },
+  'menu.theme.dark': { zh: '暗色', en: 'Dark' },
+  'menu.language': { zh: '语言', en: 'Language' },
+  'menu.logout': { zh: '登出', en: 'Log out' },
+  'menu.settings': { zh: '设置', en: 'Settings' },
+  'menu.userMenuAria': { zh: '打开用户菜单', en: 'Open user menu' },
 
   // ── Composer ─────────────────────────────────────────────
   'composer.placeholder': { zh: '说点啥。Enter 发送,Shift+Enter 换行。', en: 'Ask anything. Enter to send.' },
