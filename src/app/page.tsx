@@ -171,8 +171,17 @@ function Sidebar({
 }) {
   const [sourcesOpen, setSourcesOpen] = useState(false);
 
+  // Inline sidebar colors (no `dark:` Tailwind) — avoids the Chromium
+  // dark-mode compositing bug where descendants render as the aside's bg.
+  const sidebarBg = theme === 'dark' ? '#09090b' : '#fafafa';
+  const sidebarText = theme === 'dark' ? '#fafafa' : '#18181b';
+  const sidebarBorder = theme === 'dark' ? '#27272a' : '#e4e4e7';
+
   return (
-    <aside className="flex h-full w-full flex-col bg-zinc-50 text-zinc-900 dark:bg-zinc-950 dark:text-zinc-100">
+    <aside
+      className="flex h-full w-full flex-col"
+      style={{ backgroundColor: sidebarBg, color: sidebarText }}
+    >
       {/* Brand row + collapse toggle */}
       <div className="flex items-center justify-between gap-2 px-3 pt-3">
         <div className="flex items-center gap-2 px-1.5">
@@ -283,9 +292,34 @@ function Sidebar({
         )}
       </div>
 
-      {/* User pill is rendered at the page level (see below) so it doesn't
-          get hidden by the dark-mode Chromium rendering bug inside the
-          sidebar. */}
+      {/* User pill — at the very bottom of the sidebar (ChatGPT pattern). */}
+      {currentUser && !narrow && (
+        <div className="border-t border-zinc-200 px-1.5 py-2 dark:border-zinc-800">
+          <UserMenu
+            user={currentUser}
+            lang={lang}
+            setLang={setLang}
+            theme={theme}
+            setTheme={setTheme}
+            onLogout={onLogout}
+          />
+        </div>
+      )}
+      {/* When sidebar is collapsed, show user avatar as a small icon at the
+          bottom (so the menu is still accessible). */}
+      {currentUser && narrow && (
+        <div className="border-t border-zinc-200 px-1.5 py-2 dark:border-zinc-800">
+          <UserMenu
+            user={currentUser}
+            lang={lang}
+            setLang={setLang}
+            theme={theme}
+            setTheme={setTheme}
+            onLogout={onLogout}
+            compact
+          />
+        </div>
+      )}
     </aside>
   );
 }
@@ -442,7 +476,7 @@ function UserMenu({
   theme,
   setTheme,
   onLogout,
-  left,
+  compact,
 }: {
   user: { email: string; display_name: string | null };
   lang: Lang;
@@ -450,7 +484,7 @@ function UserMenu({
   theme: Theme;
   setTheme: (t: Theme) => void;
   onLogout: () => void;
-  left: number;
+  compact?: boolean;
 }) {
   const [open, setOpen] = useState(false);
   const ref = useRef<HTMLDivElement>(null);
@@ -466,27 +500,39 @@ function UserMenu({
 
   const initial = (user.display_name || user.email).charAt(0).toUpperCase();
 
+  // Inline styles only — no `dark:` Tailwind classes on the pill or dropdown
+  // to avoid the Chromium dark-mode compositing bug inside a `dark:`-classed
+  // sidebar ancestor.
+  const pillBg = theme === 'dark' ? '#1f2937' : '#ffffff';
+  const pillColor = theme === 'dark' ? '#ffffff' : '#18181b';
+  const dropdownBg = theme === 'dark' ? '#18181b' : '#ffffff';
+  const dropdownBorder = theme === 'dark' ? '#27272a' : '#e4e4e7';
+  const dropdownDivider = theme === 'dark' ? '#27272a' : '#f4f4f5';
+  const dropdownText = theme === 'dark' ? '#fafafa' : '#18181b';
+  const dropdownMuted = theme === 'dark' ? '#a1a1aa' : '#71717a';
+  const dropdownHover = theme === 'dark' ? '#27272a' : '#f4f4f5';
+  const activeTabBg = theme === 'dark' ? '#27272a' : '#f4f4f5';
+
   return (
     <div ref={ref} className="relative">
       <button
         onClick={() => setOpen((o) => !o)}
         style={{
-          position: 'fixed',
-          left: `${left}px`,
-          bottom: '12px',
-          zIndex: 40,
+          width: '100%',
           display: 'flex',
           alignItems: 'center',
+          justifyContent: compact ? 'center' : 'flex-start',
           gap: '10px',
-          padding: '10px',
+          padding: compact ? '6px' : '10px',
           borderRadius: '10px',
-          border: '2px solid #a78bfa',
-          backgroundColor: theme === 'dark' ? '#1f2937' : '#ffffff',
-          color: theme === 'dark' ? '#ffffff' : '#18181b',
+          border: compact ? 'none' : '2px solid #a78bfa',
+          backgroundColor: compact ? 'transparent' : pillBg,
+          color: pillColor,
           cursor: 'pointer',
           textAlign: 'left',
-          boxShadow: '0 4px 12px rgba(0, 0, 0, 0.15)',
+          boxShadow: compact ? 'none' : '0 4px 12px rgba(0, 0, 0, 0.15)',
         }}
+        title={t(lang, 'menu.userMenuAria')}
         aria-label={t(lang, 'menu.userMenuAria')}
       >
         <div
@@ -506,89 +552,122 @@ function UserMenu({
         >
           {initial}
         </div>
-        <div style={{ flex: 1, minWidth: 0, lineHeight: 1.2 }}>
-          <div style={{ fontSize: '12px', fontWeight: 600, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-            {user.display_name || user.email.split('@')[0]}
-          </div>
-          <div style={{ fontSize: '10px', opacity: 0.8, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-            {user.email}
-          </div>
-        </div>
-        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" style={{ flexShrink: 0, opacity: 0.7 }}>
-          <path d="M6 9l6 6 6-6" />
-        </svg>
+        {!compact && (
+          <>
+            <div style={{ flex: 1, minWidth: 0, lineHeight: 1.2 }}>
+              <div style={{ fontSize: '12px', fontWeight: 600, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                {user.display_name || user.email.split('@')[0]}
+              </div>
+              <div style={{ fontSize: '10px', opacity: 0.8, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                {user.email}
+              </div>
+            </div>
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" style={{ flexShrink: 0, opacity: 0.7 }}>
+              <path d="M6 9l6 6 6-6" />
+            </svg>
+          </>
+        )}
       </button>
 
       {open && (
         <div
           style={{
-            position: 'fixed',
-            left: `${left}px`,
-            bottom: '76px',
-            width: '236px',
+            position: 'absolute',
+            left: compact ? '52px' : '0',
+            bottom: compact ? '0' : 'calc(100% + 8px)',
+            width: '240px',
             zIndex: 50,
+            backgroundColor: dropdownBg,
+            border: `1px solid ${dropdownBorder}`,
+            borderRadius: '12px',
+            boxShadow: '0 12px 28px rgba(0, 0, 0, 0.18)',
+            color: dropdownText,
+            overflow: 'hidden',
           }}
-          className="overflow-hidden rounded-xl border border-zinc-200 bg-white shadow-xl dark:border-zinc-800 dark:bg-zinc-900"
         >
-          <div className="border-b border-zinc-100 px-3 py-2.5 dark:border-zinc-800">
-            <div className="text-[12px] font-semibold text-zinc-900 dark:text-zinc-100">
+          <div style={{ borderBottom: `1px solid ${dropdownDivider}`, padding: '10px 12px' }}>
+            <div style={{ fontSize: '12px', fontWeight: 600 }}>
               {user.display_name || user.email}
             </div>
-            <div className="truncate text-[10px] text-zinc-500 dark:text-zinc-400">
+            <div style={{ fontSize: '10px', color: dropdownMuted, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
               {user.email}
             </div>
           </div>
 
-          <div className="border-b border-zinc-100 px-2 py-1.5 dark:border-zinc-800">
-            <div className="px-2 pb-1 pt-1 text-[10px] font-medium uppercase tracking-wider text-zinc-400">
+          <div style={{ borderBottom: `1px solid ${dropdownDivider}`, padding: '8px 10px' }}>
+            <div style={{ padding: '0 0 4px', fontSize: '10px', fontWeight: 500, textTransform: 'uppercase', letterSpacing: '0.04em', color: dropdownMuted }}>
               {t(lang, 'menu.theme')}
             </div>
-            <div className="flex gap-1">
+            <div style={{ display: 'flex', gap: '4px' }}>
               <button
                 onClick={() => setTheme('light')}
-                className={`flex-1 rounded-md px-2 py-1.5 text-[11px] font-medium transition ${
-                  theme === 'light'
-                    ? 'bg-zinc-100 text-zinc-900 dark:bg-zinc-800 dark:text-zinc-100'
-                    : 'text-zinc-600 hover:bg-zinc-50 dark:text-zinc-400 dark:hover:bg-zinc-800/40'
-                }`}
+                style={{
+                  flex: 1,
+                  borderRadius: '6px',
+                  padding: '6px 8px',
+                  fontSize: '11px',
+                  fontWeight: 500,
+                  border: 'none',
+                  cursor: 'pointer',
+                  backgroundColor: theme === 'light' ? activeTabBg : 'transparent',
+                  color: theme === 'light' ? dropdownText : dropdownMuted,
+                }}
               >
                 ☀ {t(lang, 'menu.theme.light')}
               </button>
               <button
                 onClick={() => setTheme('dark')}
-                className={`flex-1 rounded-md px-2 py-1.5 text-[11px] font-medium transition ${
-                  theme === 'dark'
-                    ? 'bg-zinc-100 text-zinc-900 dark:bg-zinc-800 dark:text-zinc-100'
-                    : 'text-zinc-600 hover:bg-zinc-50 dark:text-zinc-400 dark:hover:bg-zinc-800/40'
-                }`}
+                style={{
+                  flex: 1,
+                  borderRadius: '6px',
+                  padding: '6px 8px',
+                  fontSize: '11px',
+                  fontWeight: 500,
+                  border: 'none',
+                  cursor: 'pointer',
+                  backgroundColor: theme === 'dark' ? activeTabBg : 'transparent',
+                  color: theme === 'dark' ? dropdownText : dropdownMuted,
+                }}
               >
                 ☾ {t(lang, 'menu.theme.dark')}
               </button>
             </div>
           </div>
 
-          <div className="border-b border-zinc-100 px-2 py-1.5 dark:border-zinc-800">
-            <div className="px-2 pb-1 pt-1 text-[10px] font-medium uppercase tracking-wider text-zinc-400">
+          <div style={{ borderBottom: `1px solid ${dropdownDivider}`, padding: '8px 10px' }}>
+            <div style={{ padding: '0 0 4px', fontSize: '10px', fontWeight: 500, textTransform: 'uppercase', letterSpacing: '0.04em', color: dropdownMuted }}>
               {t(lang, 'menu.language')}
             </div>
-            <div className="flex gap-1">
+            <div style={{ display: 'flex', gap: '4px' }}>
               <button
                 onClick={() => setLang('zh')}
-                className={`flex-1 rounded-md px-2 py-1.5 text-[11px] font-medium transition ${
-                  lang === 'zh'
-                    ? 'bg-zinc-100 text-zinc-900 dark:bg-zinc-800 dark:text-zinc-100'
-                    : 'text-zinc-600 hover:bg-zinc-50 dark:text-zinc-400 dark:hover:bg-zinc-800/40'
-                }`}
+                style={{
+                  flex: 1,
+                  borderRadius: '6px',
+                  padding: '6px 8px',
+                  fontSize: '11px',
+                  fontWeight: 500,
+                  border: 'none',
+                  cursor: 'pointer',
+                  backgroundColor: lang === 'zh' ? activeTabBg : 'transparent',
+                  color: lang === 'zh' ? dropdownText : dropdownMuted,
+                }}
               >
                 中文
               </button>
               <button
                 onClick={() => setLang('en')}
-                className={`flex-1 rounded-md px-2 py-1.5 text-[11px] font-medium transition ${
-                  lang === 'en'
-                    ? 'bg-zinc-100 text-zinc-900 dark:bg-zinc-800 dark:text-zinc-100'
-                    : 'text-zinc-600 hover:bg-zinc-50 dark:text-zinc-400 dark:hover:bg-zinc-800/40'
-                }`}
+                style={{
+                  flex: 1,
+                  borderRadius: '6px',
+                  padding: '6px 8px',
+                  fontSize: '11px',
+                  fontWeight: 500,
+                  border: 'none',
+                  cursor: 'pointer',
+                  backgroundColor: lang === 'en' ? activeTabBg : 'transparent',
+                  color: lang === 'en' ? dropdownText : dropdownMuted,
+                }}
               >
                 English
               </button>
@@ -600,7 +679,23 @@ function UserMenu({
               setOpen(false);
               onLogout();
             }}
-            className="block w-full px-3 py-2 text-left text-[12px] text-zinc-700 transition hover:bg-zinc-50 dark:text-zinc-300 dark:hover:bg-zinc-800/40"
+            style={{
+              display: 'block',
+              width: '100%',
+              padding: '8px 12px',
+              textAlign: 'left',
+              fontSize: '12px',
+              background: 'none',
+              border: 'none',
+              cursor: 'pointer',
+              color: dropdownText,
+            }}
+            onMouseEnter={(e) => {
+              (e.currentTarget as HTMLButtonElement).style.backgroundColor = dropdownHover;
+            }}
+            onMouseLeave={(e) => {
+              (e.currentTarget as HTMLButtonElement).style.backgroundColor = 'transparent';
+            }}
           >
             {t(lang, 'menu.logout')}
           </button>
@@ -1144,21 +1239,6 @@ export default function Home() {
           narrow={sidebarCollapsed}
         />
       </div>
-
-      {/* User pill — fixed at the bottom-left of the main content area.
-          Position dynamically follows the sidebar width so it never
-          overlaps the sidebar's Sources panel. */}
-      {currentUser && (
-        <UserMenu
-          user={currentUser}
-          lang={lang}
-          setLang={setLang}
-          theme={theme}
-          setTheme={setTheme}
-          onLogout={logout}
-          left={sidebarWidth + 12}
-        />
-      )}
 
       <div className="flex min-w-0 flex-1 flex-col">
         {/* Top bar — ChatGPT style: centered model label, share button on right */}
