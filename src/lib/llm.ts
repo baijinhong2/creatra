@@ -1,8 +1,13 @@
 import OpenAI from 'openai';
 
 /**
- * DeepSeek V4-flash via OpenAI-compatible API.
+ * DeepSeek via OpenAI-compatible API.
  * Supports tool calling (function calling) for agent ReAct loops.
+ *
+ * Probed 2026-07-11: deepseek-v4-pro and deepseek-v4-flash are the two
+ * currently supported model names. deepseek-chat / deepseek-reasoner /
+ * deepseek-coder are aliases that still resolve but DeepSeek recommends
+ * the v4-* names going forward. deepseek-v3 is rejected.
  */
 
 const apiKey = process.env.DEEPSEEK_API_KEY;
@@ -15,7 +20,29 @@ export const deepseek = new OpenAI({
   baseURL: 'https://api.deepseek.com',
 });
 
-export const MODEL = 'deepseek-v4-flash';
+/** Available models the user can pick in the UI. */
+export const MODELS = [
+  {
+    id: 'deepseek-v4-flash',
+    label: 'DeepSeek V4-flash',
+    description: '更便宜更快,日常运营够用',
+    badge: '快',
+  },
+  {
+    id: 'deepseek-v4-pro',
+    label: 'DeepSeek V4-pro',
+    description: '更聪明,适合复杂策略/创意',
+    badge: '强',
+  },
+] as const;
+
+export type ModelId = (typeof MODELS)[number]['id'];
+
+export const DEFAULT_MODEL: ModelId = 'deepseek-v4-flash';
+
+export function getModel(id: string | undefined): ModelId {
+  return id === 'deepseek-v4-pro' ? 'deepseek-v4-pro' : DEFAULT_MODEL;
+}
 
 // ─── Tool / function calling types ────────────────────────────────────────
 
@@ -101,25 +128,25 @@ function wrapTools(tools?: ToolDefinition[]) {
   }));
 }
 
-export async function chat(req: Omit<ChatCompletionRequest, 'model'>) {
-  // DeepSeek's API is OpenAI-compatible but our ToolDefinition is a slimmed
-  // subset. We wrap it via `wrapTools` above before sending. Cast the whole
-  // call to `any` to skip OpenAI SDK's stricter discriminator on `stream`
-  // (true / false / null) — runtime behavior matches.
+export async function chat(
+  req: Omit<ChatCompletionRequest, 'model'> & { model?: string },
+) {
+  const { model: _ignored, ...rest } = req;
   const body = {
-    model: MODEL,
-    ...req,
+    model: _ignored ?? DEFAULT_MODEL,
+    ...rest,
     tools: wrapTools(req.tools),
   };
   return deepseek.chat.completions.create(body as any) as any;
 }
 
 export async function* chatStream(
-  req: Omit<ChatCompletionRequest, 'model' | 'stream'>,
+  req: Omit<ChatCompletionRequest, 'model' | 'stream'> & { model?: string },
 ) {
+  const { model: _ignored, ...rest } = req;
   const body = {
-    model: MODEL,
-    ...req,
+    model: _ignored ?? DEFAULT_MODEL,
+    ...rest,
     tools: wrapTools(req.tools),
     stream: true,
   };

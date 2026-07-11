@@ -64,6 +64,7 @@ async function* streamOneTurn(
   messages: ChatMessage[],
   userId: string,
   conversationId: string | undefined,
+  model: string,
 ): AsyncGenerator<AgentEvent, { content: string; toolCalls: ToolCall[] }> {
   const stream = (await chatStream({
     messages,
@@ -71,6 +72,7 @@ async function* streamOneTurn(
     tool_choice: 'auto',
     temperature: 0.7,
     max_tokens: 4000,
+    model,
   })) as unknown as AsyncIterable<StreamChunk>;
 
   let accumulatedContent = '';
@@ -131,6 +133,7 @@ export async function* runAgent(
   history: ChatMessage[] = [],
   userId: string,
   conversationId?: string,
+  model: string = 'deepseek-v4-flash',
 ): AsyncGenerator<AgentEvent> {
   const messages: ChatMessage[] = [
     { role: 'system', content: AGENT_SYSTEM_PROMPT },
@@ -141,7 +144,7 @@ export async function* runAgent(
   for (let iter = 0; iter < MAX_ITERATIONS; iter++) {
     let result: { content: string; toolCalls: ToolCall[] };
     try {
-      const gen = streamOneTurn(messages, userId, conversationId);
+      const gen = streamOneTurn(messages, userId, conversationId, model);
       let next = await gen.next();
       while (!next.done) {
         yield next.value;

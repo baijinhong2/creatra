@@ -15,6 +15,7 @@ type RequestBody = {
   message: string;
   history?: ChatMessage[];
   conversationId?: string;
+  model?: string;
 };
 
 function titleFromMessage(text: string): string {
@@ -118,6 +119,7 @@ export async function POST(request: NextRequest) {
           body.history ?? [],
           user.id,
           conversationId ?? undefined,
+          body.model,
         )) {
           enqueue(event);
           if (

@@ -11,6 +11,14 @@ import {
   type Theme,
   type DictKey,
 } from '@/lib/i18n';
+import {
+  MODELS,
+  DEFAULT_MODEL,
+  type ModelId,
+  getModel,
+} from '@/lib/llm';
+
+const MODEL_STORAGE_KEY = 'vp_model';
 
 // ─── Types ─────────────────────────────────────────────────────────────
 
@@ -145,6 +153,8 @@ function Sidebar({
   onSelect,
   onNew,
   onClose,
+  currentUser,
+  onLogout,
 }: {
   lang: Lang;
   setLang: (l: Lang) => void;
@@ -155,6 +165,8 @@ function Sidebar({
   onSelect: (id: string) => void;
   onNew: () => void;
   onClose: () => void;
+  currentUser: { id: string; email: string; display_name: string | null } | null;
+  onLogout: () => void;
 }) {
   const [sourcesOpen, setSourcesOpen] = useState(false);
 
@@ -251,6 +263,20 @@ function Sidebar({
           </div>
         )}
       </div>
+
+      {/* User pill at the bottom (ChatGPT pattern) */}
+      {currentUser && (
+        <div className="border-t border-zinc-200 p-2 dark:border-zinc-800">
+          <UserMenu
+            user={currentUser}
+            lang={lang}
+            setLang={setLang}
+            theme={theme}
+            setTheme={setTheme}
+            onLogout={onLogout}
+          />
+        </div>
+      )}
     </aside>
   );
 }
@@ -535,6 +561,90 @@ function UserMenu({
 }
 
 // ─────────────────────────────────────────────────────────────────────
+// Model picker (topbar) — click the model name → dropdown of available
+// models. Each item shows a short description; the active one is checked.
+
+function ModelPicker({
+  model,
+  setModel,
+}: {
+  model: ModelId;
+  setModel: (m: ModelId) => void;
+}) {
+  const [open, setOpen] = useState(false);
+  const ref = useRef<HTMLDivElement>(null);
+  const current = MODELS.find((m) => m.id === model) ?? MODELS[0];
+
+  useEffect(() => {
+    if (!open) return;
+    const onClick = (e: MouseEvent) => {
+      if (ref.current && !ref.current.contains(e.target as Node)) {
+        setOpen(false);
+      }
+    };
+    document.addEventListener('mousedown', onClick);
+    return () => document.removeEventListener('mousedown', onClick);
+  }, [open]);
+
+  return (
+    <div ref={ref} className="relative">
+      <button
+        type="button"
+        onClick={() => setOpen((v) => !v)}
+        className="flex items-center gap-1.5 rounded-full px-1 py-0.5 text-[12px] font-medium text-zinc-700 hover:bg-zinc-100 dark:text-zinc-300 dark:hover:bg-zinc-800/60"
+        aria-label="Select model"
+        aria-expanded={open}
+      >
+        <span>{current.label}</span>
+        <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+          <path d="M6 9l6 6 6-6" />
+        </svg>
+      </button>
+      {open && (
+        <div className="absolute left-1/2 top-full z-30 mt-2 w-[300px] -translate-x-1/2 overflow-hidden rounded-xl border border-zinc-200 bg-white shadow-lg dark:border-zinc-800 dark:bg-zinc-900">
+          <div className="px-3 py-2 text-[11px] font-semibold uppercase tracking-wide text-zinc-500 dark:text-zinc-400">
+            切换模型
+          </div>
+          {MODELS.map((m) => {
+            const active = m.id === model;
+            return (
+              <button
+                key={m.id}
+                type="button"
+                onClick={() => {
+                  setModel(m.id);
+                  setOpen(false);
+                }}
+                className="flex w-full items-start gap-3 px-3 py-2.5 text-left hover:bg-zinc-50 dark:hover:bg-zinc-800/60"
+              >
+                <div className="mt-0.5 flex h-7 w-7 shrink-0 items-center justify-center rounded-md bg-zinc-100 text-[11px] font-semibold text-zinc-600 dark:bg-zinc-800 dark:text-zinc-300">
+                  {m.badge}
+                </div>
+                <div className="min-w-0 flex-1">
+                  <div className="flex items-center gap-2">
+                    <span className="text-[13px] font-medium text-zinc-900 dark:text-zinc-100">
+                      {m.label}
+                    </span>
+                    {active && (
+                      <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" className="text-emerald-500">
+                        <path d="M5 12l5 5L20 7" />
+                      </svg>
+                    )}
+                  </div>
+                  <div className="mt-0.5 text-[11px] text-zinc-500 dark:text-zinc-400">
+                    {m.description}
+                  </div>
+                </div>
+              </button>
+            );
+          })}
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ─────────────────────────────────────────────────────────────────────
 // Main page
 // ─────────────────────────────────────────────────────────────────────
 
@@ -571,6 +681,15 @@ export default function Home() {
     }
   }, []);
 
+  // Selected LLM model. Persisted to localStorage; defaults to flash.
+  const [model, setModelState] = useState<ModelId>(DEFAULT_MODEL);
+  const setModel = useCallback((m: ModelId) => {
+    setModelState(m);
+    if (typeof window !== 'undefined') {
+      window.localStorage.setItem(MODEL_STORAGE_KEY, m);
+    }
+  }, []);
+
   const [sidebarOpen, setSidebarOpen] = useState(true);
   const [conversations, setConversations] = useState<ConversationSummary[]>([]);
 
@@ -592,6 +711,15 @@ export default function Home() {
       document.documentElement.classList.toggle('dark', saved === 'dark');
     } else {
       document.documentElement.classList.remove('dark');
+    }
+  }, []);
+
+  // Re-hydrate model selection
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    const saved = window.localStorage.getItem(MODEL_STORAGE_KEY);
+    if (saved === 'deepseek-v4-flash' || saved === 'deepseek-v4-pro') {
+      setModelState(saved);
     }
   }, []);
 
@@ -793,6 +921,7 @@ export default function Home() {
             message: trimmed,
             history,
             conversationId: conversationIdRef.current,
+            model,
           }),
           signal: controller.signal,
         });
@@ -956,6 +1085,8 @@ export default function Home() {
             onSelect={switchToConversation}
             onNew={startNewChat}
             onClose={() => setSidebarOpen(false)}
+            currentUser={currentUser}
+            onLogout={logout}
           />
         </div>
       )}
@@ -979,24 +1110,13 @@ export default function Home() {
           <div className="flex items-center gap-1.5 rounded-full px-3 py-1.5 text-[12px] font-medium text-zinc-700 hover:bg-zinc-100 dark:text-zinc-300 dark:hover:bg-zinc-800/60">
             <span>viralpost</span>
             <span className="text-zinc-400">·</span>
-            <span>DeepSeek V4-flash</span>
-            <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-              <path d="M6 9l6 6 6-6" />
-            </svg>
+            <ModelPicker
+              model={model}
+              setModel={setModel}
+            />
           </div>
           <div className="flex items-center gap-2">
-            {currentUser && (
-              <div className="hidden sm:block">
-                <UserMenu
-                  user={currentUser}
-                  lang={lang}
-                  setLang={setLang}
-                  theme={theme}
-                  setTheme={setTheme}
-                  onLogout={logout}
-                />
-              </div>
-            )}
+            {/* Right side intentionally empty — user menu lives in sidebar bottom (ChatGPT pattern) */}
           </div>
         </header>
 
