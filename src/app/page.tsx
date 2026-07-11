@@ -1,7 +1,16 @@
 'use client';
 
-import { useCallback, useEffect, useRef, useState } from 'react';
-import { t, DEFAULT_LANG, LANG_STORAGE_KEY, type Lang, type DictKey } from '@/lib/i18n';
+import { Suspense, useCallback, useEffect, useRef, useState } from 'react';
+import {
+  t,
+  DEFAULT_LANG,
+  DEFAULT_THEME,
+  LANG_STORAGE_KEY,
+  THEME_STORAGE_KEY,
+  type Lang,
+  type Theme,
+  type DictKey,
+} from '@/lib/i18n';
 
 // ─── Types ─────────────────────────────────────────────────────────────
 
@@ -123,9 +132,15 @@ function timeAgo(iso: string, lang: Lang): string {
   return new Date(iso).toLocaleDateString();
 }
 
+// ─────────────────────────────────────────────────────────────────────
+// Sidebar component
+// ─────────────────────────────────────────────────────────────────────
+
 function Sidebar({
   lang,
   setLang,
+  theme,
+  setTheme,
   conversations,
   activeId,
   onSelect,
@@ -137,6 +152,8 @@ function Sidebar({
 }: {
   lang: Lang;
   setLang: (l: Lang) => void;
+  theme: Theme;
+  setTheme: (t: Theme) => void;
   conversations: ConversationSummary[];
   activeId: string | null;
   onSelect: (id: string) => void;
@@ -232,100 +249,76 @@ function Sidebar({
   const prefMap = new Map<string, Preference>(prefs.map((p) => [p.key, p]));
 
   return (
-    <aside className="flex h-full w-full flex-col border-r border-zinc-800 bg-zinc-950 text-zinc-100">
-      <div className="flex items-center justify-between border-b border-zinc-800 px-4 py-3">
-        <div className="flex items-center gap-2">
-          <div className="flex h-7 w-7 items-center justify-center rounded-md bg-gradient-to-br from-violet-500 to-fuchsia-500 text-sm font-bold">
+    <aside
+      className="flex h-full w-full flex-col border-r border-zinc-200 bg-white text-zinc-900 dark:border-zinc-800 dark:bg-zinc-950 dark:text-zinc-100"
+    >
+      {/* Brand */}
+      <div className="flex items-center justify-between px-5 py-4">
+        <div className="flex items-center gap-2.5">
+          <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-gradient-to-br from-violet-500 to-fuchsia-500 text-sm font-bold text-white shadow-sm">
             V
           </div>
           <div className="flex flex-col leading-tight">
-            <span className="font-semibold tracking-tight">
+            <span className="text-sm font-semibold tracking-tight">
               {t(lang, 'app.name')}
             </span>
-            <span className="text-[10px] uppercase tracking-wider text-zinc-500">
-              {t(lang, 'app.tagline')}
+            <span className="text-[10px] text-zinc-500 dark:text-zinc-400">
+              {t(lang, 'app.taglineShort')}
             </span>
           </div>
         </div>
         <button
           onClick={onClose}
-          className="text-zinc-500 hover:text-zinc-300 lg:hidden"
+          className="rounded-md p-1.5 text-zinc-400 hover:bg-zinc-100 hover:text-zinc-700 dark:hover:bg-zinc-800 dark:hover:text-zinc-200 lg:hidden"
           aria-label="Close sidebar"
         >
-          ✕
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+            <path d="M18 6L6 18M6 6l12 12" />
+          </svg>
         </button>
       </div>
 
-      {/* User pill + logout */}
+      {/* User pill */}
       {currentUser && (
-        <div className="flex items-center justify-between gap-2 border-b border-zinc-800 px-3 py-2">
-          <div className="flex min-w-0 flex-1 items-center gap-2">
-            <div className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-zinc-800 text-[10px] font-medium text-zinc-300">
-              {(currentUser.display_name || currentUser.email).charAt(0).toUpperCase()}
+        <div className="mx-3 mb-2 flex items-center gap-2.5 rounded-lg border border-zinc-200 bg-zinc-50 px-3 py-2 dark:border-zinc-800 dark:bg-zinc-900/60">
+          <div className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-gradient-to-br from-violet-500 to-fuchsia-500 text-[11px] font-semibold text-white">
+            {(currentUser.display_name || currentUser.email).charAt(0).toUpperCase()}
+          </div>
+          <div className="min-w-0 flex-1 leading-tight">
+            <div className="truncate text-xs font-medium">
+              {currentUser.display_name || currentUser.email.split('@')[0]}
             </div>
-            <div className="min-w-0 flex-1 leading-tight">
-              <div className="truncate text-xs font-medium text-zinc-200">
-                {currentUser.display_name || currentUser.email.split('@')[0]}
-              </div>
-              <div className="truncate text-[10px] text-zinc-500">
-                {currentUser.email}
-              </div>
+            <div className="truncate text-[10px] text-zinc-500 dark:text-zinc-400">
+              {currentUser.email}
             </div>
           </div>
           <button
             onClick={onLogout}
-            className="shrink-0 rounded px-2 py-1 text-[10px] text-zinc-500 hover:bg-zinc-800 hover:text-zinc-200"
-            title="登出"
+            className="shrink-0 rounded px-2 py-0.5 text-[10px] text-zinc-500 hover:bg-zinc-200 hover:text-zinc-700 dark:hover:bg-zinc-700 dark:hover:text-zinc-200"
+            title={lang === 'zh' ? '登出' : 'Logout'}
           >
-            登出
+            {lang === 'zh' ? '登出' : 'Logout'}
           </button>
         </div>
       )}
 
-      {/* Language switcher */}
-      <div className="border-b border-zinc-800 px-4 py-2.5">
-        <div className="text-[10px] uppercase tracking-wider text-zinc-500">
-          {t(lang, 'sidebar.lang.label')}
-        </div>
-        <div className="mt-1.5 flex gap-1">
-          <button
-            onClick={() => setLang('zh')}
-            className={`flex-1 rounded px-2 py-1 text-xs font-medium transition ${
-              lang === 'zh'
-                ? 'bg-violet-600 text-white'
-                : 'bg-zinc-900 text-zinc-400 hover:bg-zinc-800'
-            }`}
-          >
-            中文
-          </button>
-          <button
-            onClick={() => setLang('en')}
-            className={`flex-1 rounded px-2 py-1 text-xs font-medium transition ${
-              lang === 'en'
-                ? 'bg-violet-600 text-white'
-                : 'bg-zinc-900 text-zinc-400 hover:bg-zinc-800'
-            }`}
-          >
-            English
-          </button>
-        </div>
-      </div>
-
       {/* New chat */}
-      <div className="px-3 pt-3">
+      <div className="px-3">
         <button
           onClick={onNew}
-          className="flex w-full items-center justify-center gap-2 rounded-lg border border-zinc-700 bg-zinc-900 px-3 py-2 text-sm font-medium text-zinc-100 transition hover:border-violet-500/50 hover:bg-zinc-800"
+          className="group flex w-full items-center justify-center gap-2 rounded-lg bg-zinc-900 px-3 py-2.5 text-sm font-medium text-white shadow-sm transition hover:bg-zinc-700 dark:bg-zinc-100 dark:text-zinc-900 dark:hover:bg-white"
         >
-          <span className="text-base leading-none">+</span>{' '}
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round">
+            <path d="M12 5v14M5 12h14" />
+          </svg>
           {t(lang, 'sidebar.newChat')}
         </button>
       </div>
 
-      {/* Conversations */}
-      <div className="mt-4 flex-1 overflow-y-auto px-3">
-        <div className="mb-2 flex items-center justify-between">
-          <h3 className="text-[10px] font-medium uppercase tracking-wider text-zinc-500">
+      {/* Recent chats */}
+      <div className="mt-5 flex flex-1 flex-col overflow-hidden">
+        <div className="mb-1.5 flex items-center justify-between px-5">
+          <h3 className="text-[10px] font-medium uppercase tracking-wider text-zinc-400 dark:text-zinc-500">
             {t(lang, 'sidebar.recent')}
           </h3>
           <button
@@ -333,55 +326,67 @@ function Sidebar({
               onRefresh();
               if (sourcesOpen) loadPrefs();
             }}
-            className="text-[10px] text-zinc-500 hover:text-zinc-300"
+            className="rounded p-0.5 text-zinc-400 hover:bg-zinc-100 hover:text-zinc-600 dark:hover:bg-zinc-800 dark:hover:text-zinc-300"
             title={t(lang, 'sidebar.refresh')}
           >
-            ↻
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+              <path d="M3 12a9 9 0 0 1 15-6.7L21 8M21 3v5h-5M21 12a9 9 0 0 1-15 6.7L3 16M3 21v-5h5" />
+            </svg>
           </button>
         </div>
-        {conversations.length === 0 ? (
-          <p className="text-xs text-zinc-500">{t(lang, 'sidebar.emptyChats')}</p>
-        ) : (
-          <div className="flex flex-col gap-1">
-            {conversations.map((c) => {
-              const isActive = c.id === activeId;
-              return (
-                <button
-                  key={c.id}
-                  onClick={() => onSelect(c.id)}
-                  className={`group flex flex-col items-start gap-0.5 rounded-lg border px-3 py-2 text-left text-sm transition ${
-                    isActive
-                      ? 'border-violet-500/40 bg-violet-500/10'
-                      : 'border-transparent hover:border-zinc-700 hover:bg-zinc-900'
-                  }`}
-                >
-                  <div className="line-clamp-2 w-full text-zinc-100">
-                    {c.title || (lang === 'zh' ? '无标题' : 'Untitled')}
-                  </div>
-                  <div className="text-[10px] text-zinc-500">
-                    {c.message_count} {t(lang, 'meta.msg')} ·{' '}
-                    {timeAgo(c.updated_at, lang)}
-                  </div>
-                </button>
-              );
-            })}
-          </div>
-        )}
+        <div className="flex-1 overflow-y-auto px-2">
+          {conversations.length === 0 ? (
+            <p className="px-3 py-2 text-xs text-zinc-400 dark:text-zinc-500">
+              {t(lang, 'sidebar.emptyChats')}
+            </p>
+          ) : (
+            <div className="flex flex-col gap-0.5">
+              {conversations.map((c) => {
+                const isActive = c.id === activeId;
+                return (
+                  <button
+                    key={c.id}
+                    onClick={() => onSelect(c.id)}
+                    className={`group flex flex-col items-start gap-0.5 rounded-lg px-3 py-2 text-left text-sm transition ${
+                      isActive
+                        ? 'bg-violet-50 text-violet-900 dark:bg-violet-950/60 dark:text-violet-100'
+                        : 'text-zinc-700 hover:bg-zinc-100 dark:text-zinc-300 dark:hover:bg-zinc-800/60'
+                    }`}
+                  >
+                    <div className="line-clamp-1.5 w-full text-[13px] font-medium">
+                      {c.title || (lang === 'zh' ? '无标题' : 'Untitled')}
+                    </div>
+                    <div className="text-[10px] text-zinc-400 dark:text-zinc-500">
+                      {c.message_count} {t(lang, 'meta.msg')} ·{' '}
+                      {timeAgo(c.updated_at, lang)}
+                    </div>
+                  </button>
+                );
+              })}
+            </div>
+          )}
+        </div>
       </div>
 
       {/* Sources */}
-      <div className="border-t border-zinc-800 px-3 pb-3 pt-2">
+      <div className="border-t border-zinc-200 px-3 py-2 dark:border-zinc-800">
         <button
           onClick={() => setSourcesOpen((o) => !o)}
-          className="flex w-full items-center justify-between rounded px-1 py-1.5 text-[10px] font-medium uppercase tracking-wider text-zinc-500 hover:text-zinc-300"
+          className="flex w-full items-center justify-between rounded px-2 py-1.5 text-[10px] font-medium uppercase tracking-wider text-zinc-500 hover:bg-zinc-100 hover:text-zinc-700 dark:text-zinc-400 dark:hover:bg-zinc-800/60 dark:hover:text-zinc-200"
         >
-          <span>{t(lang, 'sidebar.sources')}</span>
-          <span>{sourcesOpen ? '▾' : '▸'}</span>
+          <span className="flex items-center gap-1.5">
+            <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+              <path d="M12 2L2 7l10 5 10-5-10-5z" />
+              <path d="M2 17l10 5 10-5M2 12l10 5 10-5" />
+            </svg>
+            {t(lang, 'sidebar.sources')}
+          </span>
+          <span className="text-zinc-400">{sourcesOpen ? '−' : '+'}</span>
         </button>
         {sourcesOpen && (
-          <div className="mt-2 space-y-3">
+          <div className="mt-1 space-y-3 pb-1">
             {prefsLoading && (
-              <div className="text-[10px] text-zinc-500">
+              <div className="px-2 text-[10px] text-zinc-400">
                 {t(lang, 'source.statusMsg.loading')}
               </div>
             )}
@@ -391,14 +396,14 @@ function Sidebar({
               const isEditing = editingKey === src.prefKey;
               const isSaving = savingKey === src.prefKey;
               return (
-                <div key={src.prefKey} className="space-y-1">
+                <div key={src.prefKey} className="space-y-1 px-1">
                   <div className="flex items-center justify-between">
-                    <label className="text-xs font-medium text-zinc-300">
+                    <span className="text-[11px] font-medium text-zinc-700 dark:text-zinc-300">
                       {t(lang, src.label)}
-                    </label>
+                    </span>
                     <span
-                      className={`text-[10px] ${
-                        isSet ? 'text-emerald-400' : 'text-zinc-500'
+                      className={`text-[9px] ${
+                        isSet ? 'text-emerald-600 dark:text-emerald-400' : 'text-zinc-400'
                       }`}
                     >
                       {isSet
@@ -413,13 +418,13 @@ function Sidebar({
                         value={editingValue}
                         onChange={(e) => setEditingValue(e.target.value)}
                         placeholder={src.placeholder}
-                        className="flex-1 rounded border border-zinc-700 bg-zinc-900 px-2 py-1 font-mono text-[11px] text-zinc-100 focus:border-violet-500/50 focus:outline-none"
+                        className="flex-1 rounded-md border border-zinc-200 bg-white px-2 py-1 font-mono text-[10px] text-zinc-900 placeholder:text-zinc-400 focus:border-violet-500 focus:outline-none dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-100"
                         autoFocus
                       />
                       <button
                         onClick={() => savePref(src.prefKey, editingValue)}
                         disabled={isSaving || !editingValue}
-                        className="rounded bg-violet-600 px-2 py-1 text-[10px] font-medium text-white hover:bg-violet-500 disabled:opacity-40"
+                        className="rounded-md bg-violet-600 px-2 py-1 text-[10px] font-medium text-white hover:bg-violet-500 disabled:opacity-40"
                       >
                         {isSaving ? '…' : t(lang, 'source.btn.save')}
                       </button>
@@ -428,14 +433,14 @@ function Sidebar({
                           setEditingKey(null);
                           setEditingValue('');
                         }}
-                        className="rounded bg-zinc-800 px-2 py-1 text-[10px] text-zinc-400 hover:bg-zinc-700"
+                        className="rounded-md bg-zinc-100 px-2 py-1 text-[10px] text-zinc-600 hover:bg-zinc-200 dark:bg-zinc-800 dark:text-zinc-300 dark:hover:bg-zinc-700"
                       >
                         {t(lang, 'source.btn.cancel')}
                       </button>
                     </div>
                   ) : (
                     <div className="flex gap-1">
-                      <code className="flex-1 truncate rounded border border-zinc-800 bg-zinc-900/50 px-2 py-1 font-mono text-[11px] text-zinc-500">
+                      <code className="flex-1 truncate rounded-md border border-zinc-200 bg-zinc-50 px-2 py-1 font-mono text-[10px] text-zinc-500 dark:border-zinc-800 dark:bg-zinc-900/40 dark:text-zinc-500">
                         {isSet
                           ? src.prefKey
                           : t(lang, 'source.empty', { key: src.prefKey })}
@@ -446,7 +451,7 @@ function Sidebar({
                           setEditingValue('');
                         }}
                         disabled={isSaving}
-                        className="rounded bg-zinc-800 px-2 py-1 text-[10px] text-zinc-300 hover:bg-zinc-700"
+                        className="rounded-md bg-zinc-100 px-2 py-1 text-[10px] text-zinc-600 hover:bg-zinc-200 dark:bg-zinc-800 dark:text-zinc-300 dark:hover:bg-zinc-700"
                       >
                         {isSet
                           ? t(lang, 'source.btn.replace')
@@ -456,24 +461,91 @@ function Sidebar({
                         <button
                           onClick={() => forgetPref(src.prefKey)}
                           disabled={isSaving}
-                          className="rounded bg-zinc-800 px-2 py-1 text-[10px] text-zinc-400 hover:bg-red-900/40 hover:text-red-200"
+                          className="rounded-md bg-zinc-100 px-2 py-1 text-[10px] text-zinc-500 hover:bg-red-100 hover:text-red-700 dark:bg-zinc-800 dark:text-zinc-400 dark:hover:bg-red-950 dark:hover:text-red-300"
                         >
                           {t(lang, 'source.btn.forget')}
                         </button>
                       )}
                     </div>
                   )}
-                  <p className="text-[10px] leading-snug text-zinc-600">
+                  <p className="px-0.5 text-[10px] leading-snug text-zinc-400 dark:text-zinc-500">
                     {t(lang, src.hint)}
                   </p>
                 </div>
               );
             })}
             {statusMsg && (
-              <div className="text-[10px] text-violet-400">{statusMsg}</div>
+              <div className="px-1 text-[10px] text-violet-600 dark:text-violet-400">
+                {statusMsg}
+              </div>
             )}
           </div>
         )}
+      </div>
+
+      {/* Theme + Lang toggles (bottom) */}
+      <div className="border-t border-zinc-200 px-3 py-3 dark:border-zinc-800">
+        <div className="mb-2">
+          <div className="mb-1 px-1 text-[10px] font-medium uppercase tracking-wider text-zinc-400 dark:text-zinc-500">
+            {t(lang, 'sidebar.theme.label')}
+          </div>
+          <div className="flex rounded-lg border border-zinc-200 bg-zinc-50 p-0.5 dark:border-zinc-800 dark:bg-zinc-900">
+            <button
+              onClick={() => setTheme('light')}
+              className={`flex flex-1 items-center justify-center gap-1.5 rounded-md px-2 py-1 text-[11px] font-medium transition ${
+                theme === 'light'
+                  ? 'bg-white text-zinc-900 shadow-sm dark:bg-zinc-700 dark:text-zinc-100'
+                  : 'text-zinc-500 hover:text-zinc-700 dark:text-zinc-400 dark:hover:text-zinc-200'
+              }`}
+            >
+              <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                <circle cx="12" cy="12" r="4" />
+                <path d="M12 2v2M12 20v2M4.93 4.93l1.41 1.41M17.66 17.66l1.41 1.41M2 12h2M20 12h2M4.93 19.07l1.41-1.41M17.66 6.34l1.41-1.41" />
+              </svg>
+              {t(lang, 'sidebar.theme.light')}
+            </button>
+            <button
+              onClick={() => setTheme('dark')}
+              className={`flex flex-1 items-center justify-center gap-1.5 rounded-md px-2 py-1 text-[11px] font-medium transition ${
+                theme === 'dark'
+                  ? 'bg-white text-zinc-900 shadow-sm dark:bg-zinc-700 dark:text-zinc-100'
+                  : 'text-zinc-500 hover:text-zinc-700 dark:text-zinc-400 dark:hover:text-zinc-200'
+              }`}
+            >
+              <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                <path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z" />
+              </svg>
+              {t(lang, 'sidebar.theme.dark')}
+            </button>
+          </div>
+        </div>
+        <div>
+          <div className="mb-1 px-1 text-[10px] font-medium uppercase tracking-wider text-zinc-400 dark:text-zinc-500">
+            {t(lang, 'sidebar.lang.label')}
+          </div>
+          <div className="flex rounded-lg border border-zinc-200 bg-zinc-50 p-0.5 dark:border-zinc-800 dark:bg-zinc-900">
+            <button
+              onClick={() => setLang('zh')}
+              className={`flex-1 rounded-md px-2 py-1 text-[11px] font-medium transition ${
+                lang === 'zh'
+                  ? 'bg-white text-zinc-900 shadow-sm dark:bg-zinc-700 dark:text-zinc-100'
+                  : 'text-zinc-500 hover:text-zinc-700 dark:text-zinc-400 dark:hover:text-zinc-200'
+              }`}
+            >
+              中文
+            </button>
+            <button
+              onClick={() => setLang('en')}
+              className={`flex-1 rounded-md px-2 py-1 text-[11px] font-medium transition ${
+                lang === 'en'
+                  ? 'bg-white text-zinc-900 shadow-sm dark:bg-zinc-700 dark:text-zinc-100'
+                  : 'text-zinc-500 hover:text-zinc-700 dark:text-zinc-400 dark:hover:text-zinc-200'
+              }`}
+            >
+              English
+            </button>
+          </div>
+        </div>
       </div>
     </aside>
   );
@@ -495,12 +567,10 @@ export default function Home() {
   const [conversationId, setConversationId] = useState<string | null>(null);
   const [hydrationDone, setHydrationDone] = useState(false);
 
-  // ── Auth ──
   type CurrentUser = { id: string; email: string; display_name: string | null };
   const [currentUser, setCurrentUser] = useState<CurrentUser | null>(null);
   const [authChecked, setAuthChecked] = useState(false);
 
-  // ── Language (default ZH) ──
   const [lang, setLangState] = useState<Lang>(DEFAULT_LANG);
   const setLang = useCallback((l: Lang) => {
     setLangState(l);
@@ -509,10 +579,21 @@ export default function Home() {
     }
   }, []);
 
+  const [theme, setThemeState] = useState<Theme>(DEFAULT_THEME);
+  const setTheme = useCallback((th: Theme) => {
+    setThemeState(th);
+    if (typeof window !== 'undefined') {
+      window.localStorage.setItem(THEME_STORAGE_KEY, th);
+      if (th === 'dark') {
+        document.documentElement.classList.add('dark');
+      } else {
+        document.documentElement.classList.remove('dark');
+      }
+    }
+  }, []);
+
   const [sidebarOpen, setSidebarOpen] = useState(true);
-  const [conversations, setConversations] = useState<ConversationSummary[]>(
-    [],
-  );
+  const [conversations, setConversations] = useState<ConversationSummary[]>([]);
 
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
@@ -522,6 +603,21 @@ export default function Home() {
   useEffect(() => {
     conversationIdRef.current = conversationId;
   }, [conversationId]);
+
+  // Apply theme on mount (re-hydrate from localStorage)
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    const savedTheme = window.localStorage.getItem(THEME_STORAGE_KEY);
+    if (savedTheme === 'light' || savedTheme === 'dark') {
+      setThemeState(savedTheme);
+      if (savedTheme === 'dark') {
+        document.documentElement.classList.add('dark');
+      }
+    } else {
+      // Default: light
+      document.documentElement.classList.remove('dark');
+    }
+  }, []);
 
   const refreshConversations = useCallback(async () => {
     try {
@@ -584,17 +680,13 @@ export default function Home() {
     setStatus('idle');
   }, []);
 
-  // On mount: check auth → if not signed in, redirect; else load history.
+  // Auth check on mount
   useEffect(() => {
     if (typeof window === 'undefined') return;
     (async () => {
       try {
         const meRes = await fetch('/api/auth/me', { cache: 'no-store' });
-        if (meRes.status === 401) {
-          window.location.href = '/login';
-          return;
-        }
-        if (!meRes.ok) {
+        if (meRes.status === 401 || !meRes.ok) {
           window.location.href = '/login';
           return;
         }
@@ -611,7 +703,6 @@ export default function Home() {
     })();
   }, []);
 
-  // Logout helper
   const logout = useCallback(async () => {
     try {
       await fetch('/api/auth/logout', { method: 'POST' });
@@ -624,7 +715,7 @@ export default function Home() {
     window.location.href = '/login';
   }, []);
 
-  // On mount (after auth): load lang + history + conv list
+  // After auth: load lang + history + conv list
   useEffect(() => {
     if (!authChecked) return;
     if (typeof window === 'undefined') return;
@@ -856,23 +947,34 @@ export default function Home() {
   const isEmpty =
     hydrationDone && messages.length === 0 && toolCalls.length === 0;
 
-  // While auth is being checked, render a minimal loading state so we don't
-  // flash the page contents before redirect kicks in.
   if (!authChecked) {
     return (
-      <div className="flex h-screen items-center justify-center bg-zinc-950 text-zinc-500">
-        <span className="text-sm">加载中…</span>
+      <div className="flex h-screen items-center justify-center bg-zinc-50 text-zinc-400 dark:bg-zinc-950 dark:text-zinc-500">
+        <div className="flex items-center gap-2 text-sm">
+          <svg
+            className="h-4 w-4 animate-spin"
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="2"
+          >
+            <path d="M21 12a9 9 0 1 1-6.219-8.56" />
+          </svg>
+          {lang === 'zh' ? '加载中…' : 'Loading…'}
+        </div>
       </div>
     );
   }
 
   return (
-    <div className="flex h-full min-h-screen bg-zinc-950 text-zinc-100">
+    <div className="flex h-full min-h-screen bg-zinc-50 text-zinc-900 dark:bg-zinc-950 dark:text-zinc-100">
       {sidebarOpen && (
-        <div className="w-72 shrink-0 lg:w-80">
+        <div className="hidden w-72 shrink-0 sm:block">
           <Sidebar
             lang={lang}
             setLang={setLang}
+            theme={theme}
+            setTheme={setTheme}
             conversations={conversations}
             activeId={conversationId}
             onSelect={switchToConversation}
@@ -886,27 +988,31 @@ export default function Home() {
       )}
 
       <div className="flex flex-1 flex-col">
-        <header className="flex items-center justify-between border-b border-zinc-800/80 bg-zinc-950/80 px-4 py-3 backdrop-blur">
+        {/* Top bar — minimal */}
+        <header className="flex items-center justify-between border-b border-zinc-200 bg-white/80 px-4 py-2.5 backdrop-blur dark:border-zinc-800 dark:bg-zinc-950/80">
           <div className="flex items-center gap-2">
             {!sidebarOpen && (
               <button
                 onClick={() => setSidebarOpen(true)}
-                className="rounded-md border border-zinc-800 px-2 py-1 text-xs text-zinc-400 hover:border-zinc-700 hover:text-zinc-200"
+                className="rounded-md border border-zinc-200 p-1.5 text-zinc-500 hover:border-zinc-300 hover:text-zinc-900 dark:border-zinc-800 dark:hover:border-zinc-700 dark:hover:text-zinc-100"
+                aria-label="Open sidebar"
               >
-                ☰
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                  <path d="M3 12h18M3 6h18M3 18h18" />
+                </svg>
               </button>
             )}
-            <span className="text-xs text-zinc-500">
+            <span className="text-[13px] font-medium text-zinc-700 dark:text-zinc-300">
               {conversationId ? t(lang, 'topbar.chat') : t(lang, 'topbar.newChat')}
             </span>
           </div>
-          <div className="flex items-center gap-3 text-xs text-zinc-500">
-            <span className="hidden sm:inline">{t(lang, 'app.version')}</span>
+          <div className="text-[11px] text-zinc-400 dark:text-zinc-500">
+            {t(lang, 'app.version')}
           </div>
         </header>
 
         <main className="flex-1 overflow-y-auto">
-          <div className="mx-auto w-full max-w-3xl px-4 py-8 sm:py-12">
+          <div className="mx-auto w-full max-w-3xl px-4 py-10 sm:py-16">
             {isEmpty ? (
               <EmptyState lang={lang} onPick={(p) => send(p)} />
             ) : (
@@ -951,28 +1057,30 @@ function EmptyState({
   onPick: (text: string) => void;
 }) {
   return (
-    <div className="flex flex-col items-center justify-center pt-8 text-center sm:pt-16">
-      <div className="mb-4 flex h-12 w-12 items-center justify-center rounded-2xl bg-gradient-to-br from-violet-500 to-fuchsia-500 text-xl font-bold shadow-lg shadow-violet-500/20">
+    <div className="flex flex-col items-center pt-6 text-center sm:pt-12">
+      <div className="mb-5 flex h-14 w-14 items-center justify-center rounded-2xl bg-gradient-to-br from-violet-500 via-fuchsia-500 to-pink-500 text-2xl font-bold text-white shadow-lg shadow-violet-500/20">
         V
       </div>
-      <h1 className="text-2xl font-semibold tracking-tight sm:text-3xl">
+      <h1 className="bg-gradient-to-br from-zinc-900 to-zinc-600 bg-clip-text text-3xl font-semibold tracking-tight text-transparent dark:from-zinc-100 dark:to-zinc-400 sm:text-4xl">
         {t(lang, 'empty.greeting')}
       </h1>
-      <p className="mt-3 max-w-md text-sm text-zinc-400 sm:text-base">
+      <p className="mt-3 max-w-xl text-sm leading-relaxed text-zinc-500 dark:text-zinc-400 sm:text-base">
         {t(lang, 'empty.body')}
       </p>
 
-      <div className="mt-8 grid w-full max-w-3xl grid-cols-1 gap-2 sm:grid-cols-2 lg:grid-cols-3">
+      <div className="mt-10 grid w-full max-w-3xl grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
         {SUGGESTED_PROMPT_KEYS.map((p) => (
           <button
             key={p.title}
             onClick={() => onPick(t(lang, p.body))}
-            className="group rounded-xl border border-zinc-800 bg-zinc-900/40 p-4 text-left transition hover:border-violet-500/40 hover:bg-zinc-900"
+            className="group rounded-xl border border-zinc-200 bg-white p-4 text-left shadow-sm transition hover:-translate-y-px hover:border-violet-300 hover:shadow-md dark:border-zinc-800 dark:bg-zinc-900/50 dark:hover:border-violet-700/50"
           >
-            <div className="text-sm font-medium text-zinc-200 group-hover:text-violet-300">
+            <div className="mb-1.5 text-sm font-semibold text-zinc-900 group-hover:text-violet-700 dark:text-zinc-100 dark:group-hover:text-violet-300">
               {t(lang, p.title)}
             </div>
-            <div className="mt-1 text-xs text-zinc-500">{t(lang, p.body)}</div>
+            <div className="text-[12px] leading-relaxed text-zinc-500 dark:text-zinc-400">
+              {t(lang, p.body)}
+            </div>
           </button>
         ))}
       </div>
@@ -985,7 +1093,6 @@ function EmptyState({
 // ─────────────────────────────────────────────────────────────────────
 
 function MessageList({
-  lang,
   messages,
   toolCalls,
   streamingId,
@@ -1035,10 +1142,9 @@ function MessageList({
         return (
           <div
             key={`err${i}`}
-            className="rounded-lg border border-red-900/60 bg-red-950/40 p-3 text-sm text-red-200"
+            className="rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-800 dark:border-red-900/60 dark:bg-red-950/40 dark:text-red-200"
           >
-            <strong className="font-semibold">{t(lang, 'bubble.errorPrefix')}:</strong>{' '}
-            {it.text}
+            <strong className="font-semibold">Error:</strong> {it.text}
           </div>
         );
       })}
@@ -1050,7 +1156,7 @@ function Bubble({ msg }: { msg: DisplayMessage }) {
   if (msg.role === 'user') {
     return (
       <div className="flex justify-end">
-        <div className="max-w-[85%] rounded-2xl rounded-br-sm bg-violet-600 px-4 py-2.5 text-sm text-white shadow-sm">
+        <div className="max-w-[85%] rounded-2xl rounded-br-md bg-gradient-to-br from-violet-600 to-fuchsia-600 px-4 py-2.5 text-sm text-white shadow-sm">
           {msg.content}
         </div>
       </div>
@@ -1068,11 +1174,11 @@ function AssistantStreamBubble({
 }) {
   return (
     <div className="flex justify-start">
-      <div className="max-w-[95%] rounded-2xl rounded-bl-sm border border-zinc-800 bg-zinc-900/60 px-4 py-3 text-sm leading-7 text-zinc-100">
-        <div className="prose prose-invert prose-sm max-w-none whitespace-pre-wrap break-words">
+      <div className="max-w-[95%] text-sm leading-7 text-zinc-800 dark:text-zinc-200">
+        <div className="prose prose-zinc max-w-none whitespace-pre-wrap break-words dark:prose-invert">
           {text}
           {streaming && (
-            <span className="ml-0.5 inline-block h-4 w-1.5 translate-y-0.5 animate-pulse bg-violet-400" />
+            <span className="ml-0.5 inline-block h-4 w-1.5 translate-y-0.5 animate-pulse bg-violet-500" />
           )}
         </div>
       </div>
@@ -1086,30 +1192,36 @@ function ToolCard({ tool }: { tool: ToolCallDisplay }) {
     tool.endedAt && tool.startedAt ? tool.endedAt - tool.startedAt : null;
 
   return (
-    <div className="rounded-lg border border-zinc-800 bg-zinc-900/40 text-xs">
+    <div className="overflow-hidden rounded-xl border border-zinc-200 bg-white text-xs dark:border-zinc-800 dark:bg-zinc-900/40">
       <button
         onClick={() => setOpen((o) => !o)}
-        className="flex w-full items-center justify-between gap-2 px-3 py-2 text-left"
+        className="flex w-full items-center justify-between gap-2 px-3 py-2 text-left transition hover:bg-zinc-50 dark:hover:bg-zinc-900/60"
       >
         <div className="flex items-center gap-2">
           <StatusDot status={tool.status} />
-          <span className="font-mono text-zinc-300">{tool.name}</span>
+          <span className="font-mono text-zinc-700 dark:text-zinc-300">
+            {tool.name}
+          </span>
           {durationMs !== null && (
-            <span className="text-zinc-600">{durationMs}ms</span>
+            <span className="text-zinc-400 dark:text-zinc-500">
+              {durationMs}ms
+            </span>
           )}
         </div>
-        <span className="text-zinc-500">{open ? '▾' : '▸'}</span>
+        <span className="text-zinc-400 dark:text-zinc-500">
+          {open ? '▾' : '▸'}
+        </span>
       </button>
       {open && (
-        <div className="border-t border-zinc-800 px-3 py-2 font-mono text-[11px] text-zinc-400">
-          <div className="mb-1 text-zinc-500">args</div>
+        <div className="border-t border-zinc-200 bg-zinc-50 px-3 py-2 font-mono text-[11px] text-zinc-600 dark:border-zinc-800 dark:bg-zinc-950/40 dark:text-zinc-400">
+          <div className="mb-1 text-zinc-400 dark:text-zinc-500">args</div>
           <pre className="overflow-x-auto whitespace-pre-wrap break-all">
             {JSON.stringify(tool.args, null, 2)}
           </pre>
-          <div className="mb-1 mt-3 text-zinc-500">
+          <div className="mb-1 mt-3 text-zinc-400 dark:text-zinc-500">
             {tool.ok === false ? 'error' : 'result'}
           </div>
-          <pre className="overflow-x-auto whitespace-pre-wrap break-all text-zinc-300">
+          <pre className="overflow-x-auto whitespace-pre-wrap break-all text-zinc-700 dark:text-zinc-300">
             {tool.error
               ? tool.error
               : JSON.stringify(tool.result, null, 2).slice(0, 4000)}
@@ -1123,15 +1235,15 @@ function ToolCard({ tool }: { tool: ToolCallDisplay }) {
 function StatusDot({ status }: { status: ToolCallDisplay['status'] }) {
   const color =
     status === 'running'
-      ? 'bg-amber-400 animate-pulse'
+      ? 'bg-amber-500'
       : status === 'done'
-        ? 'bg-emerald-400'
-        : 'bg-red-400';
-  return <span className={`inline-block h-2 w-2 rounded-full ${color}`} />;
+        ? 'bg-emerald-500'
+        : 'bg-red-500';
+  const pulse = status === 'running' ? 'animate-pulse' : '';
+  return <span className={`inline-block h-2 w-2 rounded-full ${color} ${pulse}`} />;
 }
 
 function Composer({
-  lang,
   input,
   setInput,
   status,
@@ -1151,12 +1263,12 @@ function Composer({
 }) {
   const streaming = status === 'streaming';
   return (
-    <div className="border-t border-zinc-800/80 bg-zinc-950/95 backdrop-blur">
+    <div className="border-t border-zinc-200 bg-white/80 px-4 py-4 backdrop-blur dark:border-zinc-800 dark:bg-zinc-950/80">
       <form
         onSubmit={onSubmit}
-        className="mx-auto flex max-w-3xl items-end gap-2 px-4 py-4"
+        className="mx-auto flex max-w-3xl items-end gap-2"
       >
-        <div className="flex-1 rounded-2xl border border-zinc-800 bg-zinc-900 transition focus-within:border-violet-500/50">
+        <div className="flex-1 rounded-2xl border border-zinc-200 bg-white shadow-sm transition focus-within:border-violet-400 focus-within:shadow-md dark:border-zinc-800 dark:bg-zinc-900 dark:focus-within:border-violet-500">
           <textarea
             ref={inputRef}
             rows={1}
@@ -1165,33 +1277,35 @@ function Composer({
             onKeyDown={onKeyDown}
             placeholder={
               streaming
-                ? t(lang, 'composer.placeholderStreaming')
-                : t(lang, 'composer.placeholder')
+                ? 'agent 跑着呢…'
+                : '说点啥。Enter 发送,Shift+Enter 换行。'
             }
             disabled={streaming}
-            className="w-full resize-none bg-transparent px-4 py-3 text-sm text-zinc-100 placeholder:text-zinc-500 focus:outline-none disabled:opacity-50"
+            className="w-full resize-none bg-transparent px-4 py-3 text-sm text-zinc-900 placeholder:text-zinc-400 focus:outline-none disabled:opacity-50 dark:text-zinc-100 dark:placeholder:text-zinc-500"
           />
         </div>
         {streaming ? (
           <button
             type="button"
             onClick={onStop}
-            className="flex h-11 shrink-0 items-center justify-center rounded-full bg-zinc-800 px-4 text-sm font-medium text-zinc-200 transition hover:bg-zinc-700"
+            className="flex h-11 shrink-0 items-center justify-center rounded-full bg-zinc-100 px-4 text-sm font-medium text-zinc-700 transition hover:bg-zinc-200 dark:bg-zinc-800 dark:text-zinc-200 dark:hover:bg-zinc-700"
           >
-            {t(lang, 'composer.stop')}
+            Stop
           </button>
         ) : (
           <button
             type="submit"
             disabled={!input.trim()}
-            className="flex h-11 shrink-0 items-center justify-center rounded-full bg-violet-600 px-4 text-sm font-medium text-white transition hover:bg-violet-500 disabled:cursor-not-allowed disabled:opacity-40"
+            className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-zinc-900 text-white shadow-sm transition hover:bg-zinc-700 disabled:cursor-not-allowed disabled:opacity-30 dark:bg-zinc-100 dark:text-zinc-900 dark:hover:bg-white"
           >
-            {t(lang, 'composer.send')}
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+              <path d="M5 12h14M13 5l7 7-7 7" />
+            </svg>
           </button>
         )}
       </form>
-      <div className="mx-auto max-w-3xl px-4 pb-3 text-[10px] text-zinc-600">
-        {t(lang, 'composer.footer')}
+      <div className="mx-auto mt-2 max-w-3xl text-center text-[10px] text-zinc-400 dark:text-zinc-500">
+        viralpost 会自己调工具 · 工具调用过程在对话流里能看到
       </div>
     </div>
   );

@@ -11,15 +11,25 @@
  */
 
 export type Lang = 'zh' | 'en';
+export type Theme = 'light' | 'dark';
 
 export const DEFAULT_LANG: Lang = 'zh';
+export const DEFAULT_THEME: Theme = 'light';
+
 export const LANG_STORAGE_KEY = 'vp_lang';
+export const THEME_STORAGE_KEY = 'vp_theme';
 
 const dict = {
   // ── App identity ──────────────────────────────────────────
   'app.name': { zh: 'viralpost', en: 'viralpost' },
   'app.tagline': { zh: 'X 增长 agent', en: 'X growth agent' },
   'app.version': { zh: '本地版 v0.2', en: 'Local build v0.2' },
+  'app.taglineShort': { zh: 'X 运营合伙人', en: 'X ops partner' },
+
+  // Theme toggle
+  'sidebar.theme.label': { zh: '外观', en: 'Theme' },
+  'sidebar.theme.light': { zh: '明亮', en: 'Light' },
+  'sidebar.theme.dark': { zh: '暗色', en: 'Dark' },
 
   // ── Sidebar ──────────────────────────────────────────────
   'sidebar.newChat': { zh: '新对话', en: 'New chat' },
