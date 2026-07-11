@@ -93,6 +93,11 @@ type Preference = {
   is_secret: boolean;
   has_value: boolean;
   updated_at: string;
+  // Phase 1 lifecycle fields (only present when fetch uses ?include=meta)
+  scope?: string;
+  confidence?: number;
+  last_used_at?: string | null;
+  last_confirmed_at?: string;
 };
 
 type Source = {
@@ -786,11 +791,13 @@ function MemoriesPanel({ lang, theme }: { lang: Lang; theme: Theme }) {
   const [prefs, setPrefs] = useState<Preference[]>([]);
   const [loading, setLoading] = useState(false);
   const [expandedKey, setExpandedKey] = useState<string | null>(null);
+  const [scopeFilter, setScopeFilter] = useState<string | null>(null);
 
   const load = useCallback(async () => {
     setLoading(true);
     try {
-      const r = await fetch('/api/preferences', { cache: 'no-store' });
+      // Phase 1: include=meta gets us scope / confidence / last_used / last_confirmed
+      const r = await fetch('/api/preferences?include=meta', { cache: 'no-store' });
       if (r.ok) {
         const data = (await r.json()) as { preferences: Preference[] };
         setPrefs(data.preferences ?? []);
@@ -821,15 +828,50 @@ function MemoriesPanel({ lang, theme }: { lang: Lang; theme: Theme }) {
   const muted = theme === 'dark' ? '#a1a1aa' : '#71717a';
   const codeBg = theme === 'dark' ? '#27272a' : '#f4f4f5';
 
+  // Phase 1: detect conflicts (same key with different values shouldn't happen
+  // due to PK, but two prefs with similar key prefix + low recency = suspicious)
+  // For now, just highlight entries with confidence < 0.5 as "low trust".
+  const filtered = scopeFilter
+    ? prefs.filter((p) => p.scope === scopeFilter)
+    : prefs;
+
+  // Aggregate counts per scope for the filter chips
+  const scopeCounts = prefs.reduce<Record<string, number>>((acc, p) => {
+    const s = p.scope ?? 'account';
+    acc[s] = (acc[s] ?? 0) + 1;
+    return acc;
+  }, {});
+
   return (
     <div>
-      <div className="mb-3 text-[11px]" style={{ color: muted }}>
-        {loading
-          ? t(lang, 'source.statusMsg.loading')
-          : `${prefs.length} ${t(lang, 'memories.count')}`}
+      <div className="mb-3 flex flex-wrap items-center gap-1">
+        <span className="text-[11px]" style={{ color: muted }}>
+          {loading ? t(lang, 'source.statusMsg.loading') : `${prefs.length} ${t(lang, 'memories.count')}`}
+        </span>
       </div>
 
-      {prefs.length === 0 && !loading && (
+      {/* Scope filter chips */}
+      <div className="mb-3 flex flex-wrap gap-1">
+        <ScopeChip
+          label="all"
+          count={prefs.length}
+          active={scopeFilter === null}
+          onClick={() => setScopeFilter(null)}
+          theme={theme}
+        />
+        {Object.entries(scopeCounts).map(([s, n]) => (
+          <ScopeChip
+            key={s}
+            label={s}
+            count={n}
+            active={scopeFilter === s}
+            onClick={() => setScopeFilter(s)}
+            theme={theme}
+          />
+        ))}
+      </div>
+
+      {filtered.length === 0 && !loading && (
         <div
           style={{
             padding: '24px 16px',
@@ -846,13 +888,20 @@ function MemoriesPanel({ lang, theme }: { lang: Lang; theme: Theme }) {
       )}
 
       <div className="space-y-1.5">
-        {prefs.map((p) => {
+        {filtered.map((p) => {
           const expanded = expandedKey === p.key;
+          const conf = p.confidence ?? 1;
+          const lastUsed = p.last_used_at ? new Date(p.last_used_at) : null;
+          const daysSinceUse = lastUsed
+            ? Math.floor((Date.now() - lastUsed.getTime()) / 86_400_000)
+            : null;
+          const isCold = daysSinceUse !== null && daysSinceUse > 90;
+          const isNeverUsed = lastUsed === null;
           return (
             <div
               key={p.key}
               style={{
-                border: `1px solid ${cardBorder}`,
+                border: `1px solid ${isCold || conf < 0.5 ? '#f59e0b' : cardBorder}`,
                 borderRadius: '8px',
                 backgroundColor: cardBg,
                 padding: '8px 10px',
@@ -869,7 +918,17 @@ function MemoriesPanel({ lang, theme }: { lang: Lang; theme: Theme }) {
                   {p.key}
                 </code>
                 <span
-                  className="text-[9px]"
+                  className="shrink-0 rounded px-1.5 py-0.5 text-[8px] font-medium uppercase tracking-wider"
+                  style={{
+                    backgroundColor: codeBg,
+                    color: muted,
+                  }}
+                  title={`scope: ${p.scope ?? 'account'}`}
+                >
+                  {p.scope ?? 'account'}
+                </span>
+                <span
+                  className="shrink-0 text-[9px]"
                   style={{
                     color: p.has_value
                       ? theme === 'dark'
@@ -877,6 +936,7 @@ function MemoriesPanel({ lang, theme }: { lang: Lang; theme: Theme }) {
                         : '#059669'
                       : muted,
                   }}
+                  title={p.is_secret ? 'secret' : 'value'}
                 >
                   {p.is_secret
                     ? t(lang, 'memories.secret')
@@ -886,10 +946,43 @@ function MemoriesPanel({ lang, theme }: { lang: Lang; theme: Theme }) {
                 </span>
                 <button
                   onClick={() => remove(p.key)}
-                  className="rounded bg-zinc-100 px-1.5 py-0.5 text-[9px] text-zinc-500 hover:bg-red-100 hover:text-red-700 dark:bg-zinc-800 dark:text-zinc-400 dark:hover:bg-red-950 dark:hover:text-red-300"
+                  className="shrink-0 rounded bg-zinc-100 px-1.5 py-0.5 text-[9px] text-zinc-500 hover:bg-red-100 hover:text-red-700 dark:bg-zinc-800 dark:text-zinc-400 dark:hover:bg-red-950 dark:hover:text-red-300"
                 >
                   🗑
                 </button>
+              </div>
+              {/* lifecycle row: confidence + last used */}
+              <div className="mt-1.5 flex flex-wrap items-center gap-2 text-[9px]" style={{ color: muted }}>
+                <span title="confidence">
+                  <span
+                    style={{
+                      color:
+                        conf >= 0.8
+                          ? '#10b981'
+                          : conf >= 0.5
+                          ? '#f59e0b'
+                          : '#ef4444',
+                      fontWeight: 600,
+                    }}
+                  >
+                    ●
+                  </span>{' '}
+                  conf {conf.toFixed(2)}
+                </span>
+                <span>
+                  {isNeverUsed
+                    ? '从未用过'
+                    : isCold
+                    ? `${daysSinceUse} 天前用过 (cold)`
+                    : daysSinceUse === 0
+                    ? '今天用过'
+                    : `${daysSinceUse} 天前用过`}
+                </span>
+                {p.last_confirmed_at && (
+                  <span title="last_confirmed_at">
+                    ✓ {(p.last_confirmed_at ?? '').slice(0, 10)}
+                  </span>
+                )}
               </div>
               {!p.is_secret && p.has_value && (
                 <button
@@ -917,6 +1010,38 @@ function MemoriesPanel({ lang, theme }: { lang: Lang; theme: Theme }) {
         })}
       </div>
     </div>
+  );
+}
+
+function ScopeChip({
+  label,
+  count,
+  active,
+  onClick,
+  theme,
+}: {
+  label: string;
+  count: number;
+  active: boolean;
+  onClick: () => void;
+  theme: Theme;
+}) {
+  return (
+    <button
+      onClick={onClick}
+      className="rounded-full px-2.5 py-0.5 text-[10px] font-medium transition"
+      style={{
+        backgroundColor: active
+          ? theme === 'dark' ? '#3f3f46' : '#e4e4e7'
+          : 'transparent',
+        color: active
+          ? theme === 'dark' ? '#fafafa' : '#18181b'
+          : theme === 'dark' ? '#a1a1aa' : '#71717a',
+        border: `1px solid ${active ? 'transparent' : theme === 'dark' ? '#27272a' : '#e4e4e7'}`,
+      }}
+    >
+      {label} <span style={{ opacity: 0.6 }}>· {count}</span>
+    </button>
   );
 }
 

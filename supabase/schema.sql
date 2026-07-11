@@ -69,11 +69,22 @@ create table if not exists public.vp_user_preferences (
   key text not null,
   value jsonb not null,
   updated_at timestamptz not null default now(),
+  -- Phase 1: 记忆管理 lifecycle / scope 字段
+  last_used_at timestamptz,                            -- agent 上次真正用过的日期(读 + used=true 才更新)
+  last_confirmed_at timestamptz not null default now(),-- 用户/agent 上次写入或确认的日期
+  confidence real not null default 1.0
+    check (confidence >= 0 and confidence <= 1),       -- 0-1, 时间衰减后会降低
+  scope text not null default 'account'
+    check (scope in ('account','voice','projects','insights','tools','episodic')),
   primary key (user_id, key)
 );
 
 create index if not exists vp_user_preferences_user_idx
   on public.vp_user_preferences (user_id);
+create index if not exists vp_user_preferences_scope_idx
+  on public.vp_user_preferences (user_id, scope);
+create index if not exists vp_user_preferences_last_used_idx
+  on public.vp_user_preferences (user_id, last_used_at);
 
 -- ── User insights (v0.4) ───────────────────────────────────────────────
 -- Captured reflections, project breakdowns, methods, discoveries — the

@@ -424,6 +424,27 @@ async function rememberPreference(
   // Trim whitespace if value is a string.
   const clean =
     typeof value === 'string' ? value.trim() : value;
+
+  // Pre-flight conflict check: if the key exists with a different value,
+  // tell the agent so it can decide whether to overwrite.
+  const db = getDb();
+  let oldValue: unknown = null;
+  let isConflict = false;
+  if (db) {
+    try {
+      const r = await db.query<{ value: unknown }>(
+        `SELECT value FROM ${TABLE.preferences} WHERE user_id = $1 AND key = $2`,
+        [userId, key],
+      );
+      oldValue = r.rows[0]?.value ?? null;
+      if (oldValue !== null && JSON.stringify(oldValue) !== JSON.stringify(clean)) {
+        isConflict = true;
+      }
+    } catch {
+      // ignore preflight errors
+    }
+  }
+
   const ok = await writePref(userId, key, clean);
   if (!ok) {
     return {
@@ -433,46 +454,133 @@ async function rememberPreference(
   }
   return {
     ok: true,
-    data: { key, saved: true },
+    data: {
+      key,
+      saved: true,
+      is_update: oldValue !== null,
+      is_conflict: isConflict,
+      old_value:
+        isConflict && !/\.(token|key|secret|auth_token|ct0|password)$/i.test(key)
+          ? oldValue
+          : isConflict
+          ? '[REDACTED]'
+          : null,
+      hint: isConflict
+        ? 'This key had a different value. The new value replaced it. If the user wanted both, ask whether to keep the old one or treat it as superseded.'
+        : null,
+    },
   };
 }
 
 async function readPreferencesTool(
   userId: string,
-  keys?: string[],
+  options: { keys?: string[]; scopes?: string[] } = {},
 ): Promise<ToolResult> {
   const db = getDb();
   if (!db) return { ok: false, error: 'DB not available' };
   try {
-    const r =
-      keys && keys.length > 0
-        ? await db.query<{ key: string; value: unknown; updated_at: unknown }>(
-            `SELECT key, value, updated_at FROM ${TABLE.preferences}
-             WHERE user_id = $1 AND key = ANY($2::text[])`,
-            [userId, keys],
-          )
-        : await db.query<{ key: string; value: unknown; updated_at: unknown }>(
-            `SELECT key, value, updated_at FROM ${TABLE.preferences}
-             WHERE user_id = $1 ORDER BY key`,
-            [userId],
-          );
-    const redacted = r.rows.map((row) => {
-      const isSecretKey =
-        /\.(token|key|secret|auth_token|ct0|password)$/i.test(row.key);
+    const { keys, scopes } = options;
+    // Three modes:
+    //   keys=[...] only                 → specific keys
+    //   scopes=[...] only               → by memory scope
+    //   both                             → intersection
+    //   neither                          → all (default)
+    if (keys && keys.length > 0) {
+      const r = await db.query<{
+        key: string; value: unknown; updated_at: unknown; scope: string;
+        last_used_at: Date | null; last_confirmed_at: Date; confidence: number;
+      }>(
+        `SELECT key, value, updated_at, scope, last_used_at, last_confirmed_at, confidence
+         FROM ${TABLE.preferences}
+         WHERE user_id = $1 AND key = ANY($2::text[])`,
+        [userId, keys],
+      );
+      // bump last_used for returned keys
+      const returnedKeys = r.rows.map((row) => row.key);
+      if (returnedKeys.length > 0) {
+        await db.query(
+          `UPDATE ${TABLE.preferences} SET last_used_at = now()
+           WHERE user_id = $1 AND key = ANY($2::text[])`,
+          [userId, returnedKeys],
+        );
+      }
+      return { ok: true, data: redactRows(r.rows) };
+    }
+    if (scopes && scopes.length > 0) {
+      const r = await db.query<{
+        key: string; value: unknown; updated_at: unknown; scope: string;
+        last_used_at: Date | null; last_confirmed_at: Date; confidence: number;
+      }>(
+        `SELECT key, value, updated_at, scope, last_used_at, last_confirmed_at, confidence
+         FROM ${TABLE.preferences}
+         WHERE user_id = $1 AND scope = ANY($2::text[])
+         ORDER BY scope, key`,
+        [userId, scopes],
+      );
+      const returnedKeys = r.rows.map((row) => row.key);
+      if (returnedKeys.length > 0) {
+        await db.query(
+          `UPDATE ${TABLE.preferences} SET last_used_at = now()
+           WHERE user_id = $1 AND key = ANY($2::text[])`,
+          [userId, returnedKeys],
+        );
+      }
       return {
-        key: row.key,
-        value: isSecretKey
-          ? row.value
-            ? '[REDACTED: set]'
-            : '[not set]'
-          : row.value,
-        updated_at: String(row.updated_at),
+        ok: true,
+        data: { scope_filter: scopes, count: r.rows.length, items: redactRows(r.rows) },
       };
-    });
-    return { ok: true, data: redacted };
+    }
+    // no filter — return all
+    const r = await db.query<{
+      key: string; value: unknown; updated_at: unknown; scope: string;
+      last_used_at: Date | null; last_confirmed_at: Date; confidence: number;
+    }>(
+      `SELECT key, value, updated_at, scope, last_used_at, last_confirmed_at, confidence
+       FROM ${TABLE.preferences}
+       WHERE user_id = $1 ORDER BY scope, key`,
+      [userId],
+    );
+    const returnedKeys = r.rows.map((row) => row.key);
+    if (returnedKeys.length > 0) {
+      await db.query(
+        `UPDATE ${TABLE.preferences} SET last_used_at = now()
+         WHERE user_id = $1 AND key = ANY($2::text[])`,
+        [userId, returnedKeys],
+      );
+    }
+    return { ok: true, data: { count: r.rows.length, items: redactRows(r.rows) } };
   } catch (e) {
     return { ok: false, error: e instanceof Error ? e.message : String(e) };
   }
+}
+
+function redactRows(
+  rows: Array<{
+    key: string;
+    value: unknown;
+    updated_at: unknown;
+    scope: string;
+    last_used_at: Date | null;
+    last_confirmed_at: Date;
+    confidence: number;
+  }>,
+) {
+  return rows.map((row) => {
+    const isSecretKey =
+      /\.(token|key|secret|auth_token|ct0|password)$/i.test(row.key);
+    return {
+      key: row.key,
+      scope: row.scope,
+      confidence: row.confidence,
+      value: isSecretKey
+        ? row.value
+          ? '[REDACTED: set]'
+          : '[not set]'
+        : row.value,
+      last_used_at: row.last_used_at ? String(row.last_used_at) : null,
+      last_confirmed_at: String(row.last_confirmed_at),
+    };
+  });
 }
 
 // ─── Insights (user-accumulated content) ──────────────────────────────────
@@ -776,13 +884,17 @@ export const TOOL_DEFINITIONS: ToolDefinition[] = [
   {
     name: 'read_preferences',
     description:
-      'Read stored preferences. Optional `keys` filter; omit to list all non-secret keys (secrets are redacted as "[REDACTED: set]").',
+      "Read stored preferences. You SHOULD pass `scopes` (one of: 'account', 'voice', 'projects', 'insights', 'tools', 'episodic') so the system only returns the memories relevant to what you're doing — not the whole KV store. You may also pass `keys` for a specific list. Each scope has a clear purpose: 'account' = who/what the account is, 'voice' = how to write, 'projects' = what user is building, 'insights' = user's accumulated thinking (use list_insights for that), 'tools' = credentials and tokens, 'episodic' = past events. Calling this also updates the last_used_at timestamp on the returned rows — that's how memories stay 'fresh' vs. 'cold'.",
     parameters: {
       type: 'object',
       properties: {
+        scopes: {
+          type: 'array',
+          description: 'Optional list of scopes to read. Examples: ["account","voice"] for a tweet; ["projects"] for build-in-public context.',
+        },
         keys: {
           type: 'array',
-          description: 'Optional list of keys to read. Omit for all.',
+          description: 'Optional list of specific keys to read. Use only when you know exactly which key you need.',
         },
       },
     },
@@ -907,12 +1019,14 @@ export async function runTool(
     case 'remember_preference':
       return rememberPreference(userId, String(args.key ?? ''), args.value);
     case 'read_preferences':
-      return readPreferencesTool(
-        userId,
-        Array.isArray(args.keys)
+      return readPreferencesTool(userId, {
+        keys: Array.isArray(args.keys)
           ? (args.keys as unknown[]).map(String)
           : undefined,
-      );
+        scopes: Array.isArray(args.scopes)
+          ? (args.scopes as unknown[]).map(String)
+          : undefined,
+      });
     case 'save_insight':
       return saveInsight(userId, ctx.conversationId, {
         kind: String(args.kind ?? ''),
