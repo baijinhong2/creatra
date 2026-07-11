@@ -36,21 +36,30 @@ const dict = {
   'topbar.newChat': { zh: '新对话', en: 'New chat' },
 
   // ── Empty state ──────────────────────────────────────────
-  'empty.greeting': { zh: '你好 — 我是你的 X 增长 agent。', en: "Hi — I'm your X growth agent." },
+  'empty.greeting': { zh: '你好 — 我是你的 X 运营合伙人。', en: "Hi — I'm your X ops partner." },
   'empty.body': {
-    zh: '我能搜 X 和全网、看你的 GitHub、追踪对标博主、陪你一起写推文。挑一个起点,或者直接告诉我你要什么。',
-    en: 'I can search X and the web, look at your GitHub, watch creators you admire, and write tweets with you. Pick a starter, or just say what you need.',
+    zh: '我专门做 X 账号运营,8 件事都能干:定位挖掘 · 用户名/bio · 对标博主 · 内容策略 · 每日推文 · 评论回复 · 竞品互动 · 数据分析。挑一个起点,或者直接说要啥。',
+    en: 'I run X accounts end-to-end. 8 capabilities: positioning · username/bio · similar creators · content strategy · daily tweets · comment replies · competitor engagement · analytics. Pick a starter or just say what you need.',
+  },
+  'empty.skillsHint': {
+    zh: '所有能力 →',
+    en: 'All skills →',
   },
 
-  // Suggested prompts (titles + bodies)
-  'prompt.audit.title': { zh: '诊断账号', en: 'Audit my account' },
-  'prompt.audit.body': { zh: '我这个 X 账号现在啥状态?最该先抓什么?', en: "What's the current state of my X account? Where should I focus first?" },
-  'prompt.findCreators.title': { zh: '找对标博主', en: 'Find creators to follow' },
-  'prompt.findCreators.body': { zh: '帮我找 5 个现在值得关注的独立开发者/AI 创业者。', en: 'Find me 5 indie developers or AI builders on X I should follow right now.' },
-  'prompt.buildInPublic.title': { zh: 'build in public 草稿', en: 'Build-in-public draft' },
-  'prompt.buildInPublic.body': { zh: '看看我的 GitHub 仓库,给我写一条今天能发的 build-in-public 推文。', en: 'Look at my GitHub repos and suggest a build-in-public tweet for today.' },
-  'prompt.trends.title': { zh: '热点 + 角度', en: 'Trends + angles' },
-  'prompt.trends.body': { zh: '搜下 X 和全网最近 AI / indie hacker 圈在聊啥,给我 3 个今天能发的角度。', en: 'Search X and the web for trending AI/indie-hacker topics today and give me 3 angles I could tweet.' },
+  // Suggested prompts — covers the most common entry points across the
+  // 8-skill catalog. Order: process-natural for a new user.
+  'prompt.positioning.title': { zh: '从 0 定位账号', en: 'Position my account' },
+  'prompt.positioning.body': { zh: '我想搞个 X 账号,但不知道做啥方向。帮我挖一下。', en: 'I want to start an X account but have no idea what niche. Help me figure it out.' },
+  'prompt.brand.title': { zh: '取名 + bio', en: 'Username + bio' },
+  'prompt.brand.body': { zh: '我的定位是 X,帮我取个用户名 + 写个 bio + 想个头像方向。', en: 'My niche is X. Help me pick a handle, write a bio, and figure out an avatar direction.' },
+  'prompt.creators.title': { zh: '找对标博主', en: 'Find creators to follow' },
+  'prompt.creators.body': { zh: '基于我的定位,推荐 10 个我应该 follow 的对标(分大 V / 成长中 / 新兴三档)。', en: 'Based on my positioning, recommend 10 similar creators to follow (split into big / growing / emerging).' },
+  'prompt.strategy.title': { zh: '内容更新策略', en: 'Content + update strategy' },
+  'prompt.strategy.body': { zh: '结合对标和我的项目,给我 3 个内容 pillar + 更新频次/时段/形式的策略。', en: 'Combine my watchlist and my projects into a strategy: 3 content pillars + frequency + format mix.' },
+  'prompt.daily.title': { zh: '今天发什么', en: "Today's tweets" },
+  'prompt.daily.body': { zh: '今天发什么推文?给我 3 条直接可发的,带配图说明。', en: "Plan today's tweets. Give me 3 publishable ones with image guidance." },
+  'prompt.analytics.title': { zh: '我的数据', en: 'My analytics' },
+  'prompt.analytics.body': { zh: '看我最近 20 条推文表现,哪些火、哪些没火、下周该调整啥。', en: 'Look at my last 20 tweets — which worked, which didnt, what to change next week.' },
 
   // ── Composer ─────────────────────────────────────────────
   'composer.placeholder': { zh: '说点啥。Enter 发送,Shift+Enter 换行。', en: 'Ask anything. Enter to send.' },

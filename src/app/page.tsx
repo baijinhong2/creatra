@@ -48,10 +48,12 @@ type AgentEvent =
 const CONV_KEY = 'vp_conversation_id';
 
 const SUGGESTED_PROMPT_KEYS: { title: DictKey; body: DictKey }[] = [
-  { title: 'prompt.audit.title', body: 'prompt.audit.body' },
-  { title: 'prompt.findCreators.title', body: 'prompt.findCreators.body' },
-  { title: 'prompt.buildInPublic.title', body: 'prompt.buildInPublic.body' },
-  { title: 'prompt.trends.title', body: 'prompt.trends.body' },
+  { title: 'prompt.positioning.title', body: 'prompt.positioning.body' },
+  { title: 'prompt.brand.title', body: 'prompt.brand.body' },
+  { title: 'prompt.creators.title', body: 'prompt.creators.body' },
+  { title: 'prompt.strategy.title', body: 'prompt.strategy.body' },
+  { title: 'prompt.daily.title', body: 'prompt.daily.body' },
+  { title: 'prompt.analytics.title', body: 'prompt.analytics.body' },
 ];
 
 // ─────────────────────────────────────────────────────────────────────
@@ -960,7 +962,7 @@ function EmptyState({
         {t(lang, 'empty.body')}
       </p>
 
-      <div className="mt-8 grid w-full max-w-2xl grid-cols-1 gap-2 sm:grid-cols-2">
+      <div className="mt-8 grid w-full max-w-3xl grid-cols-1 gap-2 sm:grid-cols-2 lg:grid-cols-3">
         {SUGGESTED_PROMPT_KEYS.map((p) => (
           <button
             key={p.title}
