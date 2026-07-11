@@ -8,6 +8,11 @@ import OpenAI from 'openai';
  * currently supported model names. deepseek-chat / deepseek-reasoner /
  * deepseek-coder are aliases that still resolve but DeepSeek recommends
  * the v4-* names going forward. deepseek-v3 is rejected.
+ *
+ * IMPORTANT: this module is SERVER ONLY. Importing it from a client
+ * component will pull the OpenAI client into the browser bundle, and
+ * the SDK throws "running in a browser-like environment" on construct.
+ * Use `src/lib/models.ts` for client-safe constants.
  */
 
 const apiKey = process.env.DEEPSEEK_API_KEY;
@@ -20,29 +25,11 @@ export const deepseek = new OpenAI({
   baseURL: 'https://api.deepseek.com',
 });
 
-/** Available models the user can pick in the UI. */
-export const MODELS = [
-  {
-    id: 'deepseek-v4-flash',
-    label: 'DeepSeek V4-flash',
-    description: '更便宜更快,日常运营够用',
-    badge: '快',
-  },
-  {
-    id: 'deepseek-v4-pro',
-    label: 'DeepSeek V4-pro',
-    description: '更聪明,适合复杂策略/创意',
-    badge: '强',
-  },
-] as const;
-
-export type ModelId = (typeof MODELS)[number]['id'];
-
-export const DEFAULT_MODEL: ModelId = 'deepseek-v4-flash';
-
-export function getModel(id: string | undefined): ModelId {
-  return id === 'deepseek-v4-pro' ? 'deepseek-v4-pro' : DEFAULT_MODEL;
-}
+// Re-export client-safe model constants for server-side callers
+// (e.g. /api/chat) so we don't have to import from `models.ts` everywhere.
+import { DEFAULT_MODEL as _DEFAULT_MODEL } from './models';
+export { MODELS, DEFAULT_MODEL, getModel } from './models';
+export type { ModelId } from './models';
 
 // ─── Tool / function calling types ────────────────────────────────────────
 
@@ -133,7 +120,7 @@ export async function chat(
 ) {
   const { model: _ignored, ...rest } = req;
   const body = {
-    model: _ignored ?? DEFAULT_MODEL,
+    model: _ignored ?? _DEFAULT_MODEL,
     ...rest,
     tools: wrapTools(req.tools),
   };
@@ -145,7 +132,7 @@ export async function* chatStream(
 ) {
   const { model: _ignored, ...rest } = req;
   const body = {
-    model: _ignored ?? DEFAULT_MODEL,
+    model: _ignored ?? _DEFAULT_MODEL,
     ...rest,
     tools: wrapTools(req.tools),
     stream: true,

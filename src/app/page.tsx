@@ -14,11 +14,10 @@ import {
 import {
   MODELS,
   DEFAULT_MODEL,
+  MODEL_STORAGE_KEY,
   type ModelId,
   getModel,
-} from '@/lib/llm';
-
-const MODEL_STORAGE_KEY = 'vp_model';
+} from '@/lib/models';
 
 // ─── Types ─────────────────────────────────────────────────────────────
 
