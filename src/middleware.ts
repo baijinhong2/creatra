@@ -46,11 +46,14 @@ export function middleware(req: NextRequest) {
     return NextResponse.redirect(url);
   }
 
-  // Pass session id through to API routes (middleware itself can't talk to DB
-  // on Edge; routes validate in Node runtime).
-  const res = NextResponse.next();
-  res.headers.set('x-vp-session-id', sid);
-  return res;
+  // Pass session id to downstream API route handlers via REQUEST headers
+  // (not response headers — that would leak the session token to the browser).
+  // The header is read by `currentSessionIdServer()` in src/lib/auth.ts.
+  const requestHeaders = new Headers(req.headers);
+  requestHeaders.set('x-vp-session-id', sid);
+  return NextResponse.next({
+    request: { headers: requestHeaders },
+  });
 }
 
 export const config = {

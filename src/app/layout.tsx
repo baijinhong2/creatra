@@ -2,6 +2,14 @@ import type { Metadata } from "next";
 import { Geist, Geist_Mono } from "next/font/google";
 import "./globals.css";
 
+// Force dynamic rendering for the whole app. The home page is per-user
+// (shows the user's conversations, account menu, preferences). Without
+// this, Next.js prerenders the home page at build time and attaches
+// `Cache-Control: s-maxage=31536000` to the response — that long-cached
+// identical HTML interacts badly with incognito + cookie changes and
+// produces Chrome's "This page couldn't load" error.
+export const dynamic = 'force-dynamic';
+
 const geistSans = Geist({
   variable: "--font-geist-sans",
   subsets: ["latin"],
