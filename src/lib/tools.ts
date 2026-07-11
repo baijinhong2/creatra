@@ -125,6 +125,54 @@ async function tavilySearch(
   }
 }
 
+/**
+ * Image-only search via Tavily's `include_images: true` mode. Used by the
+ * daily-tweet skill (skill 5) when the planned tweet needs a hero image —
+ * if the image can be sourced from the open web, fetch the URLs so the
+ * user can grab them; otherwise the agent falls back to writing a
+ * description for the user to provide.
+ */
+async function tavilyImageSearch(
+  userId: string,
+  query: string,
+  maxResults = 6,
+): Promise<ToolResult> {
+  const apiKey = await getCred(userId, 'tavily.key', 'TAVILY_API_KEY');
+  if (!apiKey) {
+    return {
+      ok: false,
+      error: 'No Tavily key. Tell the user to add one in Sources, or call remember_preference(key="tavily.key", value="tvly-...").',
+    };
+  }
+  try {
+    const r = await fetch('https://api.tavily.com/search', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        api_key: apiKey,
+        query,
+        max_results: maxResults,
+        include_images: true,
+        search_depth: 'basic',
+      }),
+    });
+    if (!r.ok) {
+      return { ok: false, error: `Tavily HTTP ${r.status}` };
+    }
+    const data = (await r.json()) as { images?: Array<{ url: string; description?: string }> };
+    const images = (data.images ?? [])
+      .filter((img) => typeof img.url === 'string' && img.url.length > 0)
+      .slice(0, maxResults)
+      .map((img) => ({
+        url: img.url,
+        description: img.description ?? '',
+      }));
+    return { ok: true, data: { count: images.length, images } };
+  } catch (e) {
+    return { ok: false, error: e instanceof Error ? e.message : String(e) };
+  }
+}
+
 async function githubRead(
   userId: string,
   owner: string,
@@ -242,6 +290,61 @@ async function twitterApi(
       );
       data = await searchRes.json();
     }
+    return { ok: true, data };
+  } catch (e) {
+    return { ok: false, error: e instanceof Error ? e.message : String(e) };
+  }
+}
+
+/**
+ * Fetch replies under a single tweet. Uses X's SearchTimeline GraphQL with a
+ * `conversation_id:{tweetId}` filter, which returns the full conversation
+ * thread (parent + replies). Skill 6 ("comment triage") uses this to surface
+ * the comments on the user's own tweets.
+ */
+async function twitterGetReplies(
+  userId: string,
+  tweetId: string,
+  count = 30,
+): Promise<ToolResult> {
+  const authToken = await getCred(userId, 'x.auth_token', 'X_AUTH_TOKEN');
+  const ct0 = await getCred(userId, 'x.ct0', 'X_CT0');
+  if (!authToken || !ct0) {
+    return {
+      ok: false,
+      error:
+        'X cookies not configured. Add X_AUTH_TOKEN + X_CT0 in Sources.',
+    };
+  }
+  if (!tweetId || !/^\d{5,30}$/.test(tweetId)) {
+    return { ok: false, error: 'tweet_id must be a numeric X tweet id' };
+  }
+
+  const headers: Record<string, string> = {
+    'User-Agent':
+      'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/129.0.0.0 Safari/537.36',
+    Authorization:
+      'Bearer AAAAAAAAAAAAAAAAAAAAANRILgAAAAAAnNwIzUejRCOuH5E6I8xnZz4puTs=1Zv7ttfk8LF81IUq16cHjhLTvJu4FA33AGWWjCpTnA',
+    Cookie: `auth_token=${authToken}; ct0=${ct0}`,
+    'X-Csrf-Token': ct0,
+    'X-Twitter-Auth-Type': 'OAuth2Session',
+    'Content-Type': 'application/json',
+  };
+
+  try {
+    const r = await fetch(
+      `https://api.twitter.com/graphql/gkjsKepM6gl_HmFWoWKfgg/SearchTimeline?variables=${encodeURIComponent(
+        JSON.stringify({
+          rawQuery: `conversation_id:${tweetId}`,
+          count,
+          querySource: 'typed_query',
+          product: 'Latest',
+        }),
+      )}`,
+      { headers, signal: AbortSignal.timeout(15000) },
+    );
+    if (!r.ok) return { ok: false, error: `X GraphQL HTTP ${r.status}` };
+    const data = await r.json();
     return { ok: true, data };
   } catch (e) {
     return { ok: false, error: e instanceof Error ? e.message : String(e) };
@@ -376,9 +479,11 @@ async function readPreferencesTool(
 
 export type ToolName =
   | 'web_search'
+  | 'web_image_search'
   | 'github_read'
   | 'twitter_search'
   | 'twitter_get_user_tweets'
+  | 'twitter_get_tweet_replies'
   | 'suggest_similar_creators'
   | 'remember_preference'
   | 'read_preferences';
@@ -393,6 +498,19 @@ export const TOOL_DEFINITIONS: ToolDefinition[] = [
       properties: {
         query: { type: 'string', description: 'Search query' },
         max_results: { type: 'string', description: 'Optional, default 5' },
+      },
+      required: ['query'],
+    },
+  },
+  {
+    name: 'web_image_search',
+    description:
+      "Image-only web search. Returns image URLs (and a short description) for a query — use this when planning a tweet that needs a hero image and the image is something that can be sourced from the open web (stock photo, screenshot, infographic, etc.). If the planned image must be user-created (custom diagram, personal photo, AI-generated), don't call this — instead, in your tweet plan, write a clear '🖼️ 你需要提供:[description]' line so the user knows what to prepare. Requires Tavily key (preferences 'tavily.key').",
+    parameters: {
+      type: 'object',
+      properties: {
+        query: { type: 'string', description: 'What the image should be about' },
+        max_results: { type: 'string', description: 'Optional, default 6' },
       },
       required: ['query'],
     },
@@ -427,7 +545,7 @@ export const TOOL_DEFINITIONS: ToolDefinition[] = [
   {
     name: 'twitter_get_user_tweets',
     description:
-      "Fetch the most recent tweets of a given X user. Use to study a benchmark account's recent content. Requires X cookies in preferences.",
+      "Fetch the most recent tweets of a given X user. Use to study a benchmark account's recent content. For the user's own tweets, read their handle from preferences 'x.handle' and call this with that handle — the response includes impressions/likes/reposts/replies metrics on each tweet which skill 8 (analysis) needs. Requires X cookies in preferences.",
     parameters: {
       type: 'object',
       properties: {
@@ -435,6 +553,19 @@ export const TOOL_DEFINITIONS: ToolDefinition[] = [
         count: { type: 'string', description: 'Optional, default 10' },
       },
       required: ['username'],
+    },
+  },
+  {
+    name: 'twitter_get_tweet_replies',
+    description:
+      "Fetch the conversation thread under a single tweet (parent + replies) by tweet id. Use this for skill 6 (comment triage) — the user has their own recent tweet ids from twitter_get_user_tweets(their_handle), pass each interesting one here, then decide which replies deserve a response and draft one. Requires X cookies.",
+    parameters: {
+      type: 'object',
+      properties: {
+        tweet_id: { type: 'string', description: 'Numeric X tweet id' },
+        count: { type: 'string', description: 'Optional, default 30' },
+      },
+      required: ['tweet_id'],
     },
   },
   {
@@ -502,6 +633,12 @@ export async function runTool(
         String(args.query ?? ''),
         Number(args.max_results ?? 5),
       );
+    case 'web_image_search':
+      return tavilyImageSearch(
+        userId,
+        String(args.query ?? ''),
+        Number(args.max_results ?? 6),
+      );
     case 'github_read':
       return githubRead(
         userId,
@@ -519,6 +656,12 @@ export async function runTool(
         username: String(args.username ?? ''),
         count: String(args.count ?? 10),
       });
+    case 'twitter_get_tweet_replies':
+      return twitterGetReplies(
+        userId,
+        String(args.tweet_id ?? ''),
+        Number(args.count ?? 30),
+      );
     case 'suggest_similar_creators':
       return suggestSimilarCreators(
         String(args.account_context ?? ''),
