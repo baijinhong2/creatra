@@ -1190,6 +1190,10 @@ export default function Home() {
   };
 
   const handleKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
+    // Skip Enter-to-send while an IME (Chinese/Japanese/Korean input) is
+    // composing — pressing Enter to confirm a candidate would otherwise
+    // fire the message immediately.
+    if (e.nativeEvent.isComposing || e.keyCode === 229) return;
     if (e.key === 'Enter' && !e.shiftKey) {
       e.preventDefault();
       handleSubmit();
