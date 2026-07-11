@@ -1240,7 +1240,7 @@ export default function Home() {
         />
       </div>
 
-      <div className="flex min-w-0 flex-1 flex-col">
+      <div className="relative flex min-w-0 flex-1 flex-col">
         {/* Top bar — ChatGPT style: centered model label, share button on right */}
         <header className="flex items-center justify-between px-4 py-3">
           <div className="flex items-center gap-2">
