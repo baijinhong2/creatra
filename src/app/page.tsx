@@ -245,7 +245,7 @@ function Sidebar({
       <div className="border-t border-zinc-200 px-1.5 py-2 dark:border-zinc-800">
         <button
           onClick={() => setSourcesOpen((o) => !o)}
-          className="flex w-full items-center justify-between rounded-md px-3 py-1.5 text-[12px] text-zinc-500 transition hover:bg-zinc-200/40 hover:text-zinc-800 dark:text-zinc-400 dark:hover:bg-zinc-800/40 dark:hover:text-zinc-100"
+          className="flex w-full items-center justify-between rounded-md px-3 py-1.5 text-[12px] text-zinc-600 transition hover:bg-zinc-200/40 hover:text-zinc-900 dark:text-zinc-300 dark:hover:bg-zinc-800/40 dark:hover:text-zinc-50"
         >
           <span className="flex items-center gap-1.5">
             <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
@@ -263,19 +263,9 @@ function Sidebar({
         )}
       </div>
 
-      {/* User pill at the bottom (ChatGPT pattern) */}
-      {currentUser && (
-        <div className="border-t border-zinc-200 p-2 dark:border-zinc-800">
-          <UserMenu
-            user={currentUser}
-            lang={lang}
-            setLang={setLang}
-            theme={theme}
-            setTheme={setTheme}
-            onLogout={onLogout}
-          />
-        </div>
-      )}
+      {/* User pill lives at the page level (fixed bottom-left), not inside
+          the sidebar, so it never gets hidden by sidebar overflow or any
+          dark-mode rendering quirks. */}
     </aside>
   );
 }
@@ -441,7 +431,7 @@ function UserMenu({
   onLogout: () => void;
 }) {
   const [open, setOpen] = useState(false);
-  const ref = useRef<HTMLDivElement>(null);
+  const ref = useRef<HTMLButtonElement>(null);
 
   useEffect(() => {
     if (!open) return;
@@ -455,30 +445,72 @@ function UserMenu({
   const initial = (user.display_name || user.email).charAt(0).toUpperCase();
 
   return (
-    <div ref={ref} className="relative">
+    <>
       <button
+        ref={ref}
         onClick={() => setOpen((o) => !o)}
-        className="flex w-full items-center gap-2.5 rounded-lg px-2 py-1.5 transition hover:bg-zinc-200/60 dark:hover:bg-zinc-800/60"
+        style={{
+          position: 'fixed',
+          left: '12px',
+          bottom: '12px',
+          width: '236px',
+          zIndex: 40,
+          display: 'flex',
+          alignItems: 'center',
+          gap: '10px',
+          padding: '10px',
+          borderRadius: '10px',
+          border: '2px solid #a78bfa',
+          backgroundColor: theme === 'dark' ? '#1f2937' : '#ffffff',
+          color: theme === 'dark' ? '#ffffff' : '#18181b',
+          cursor: 'pointer',
+          textAlign: 'left',
+          boxShadow: '0 4px 12px rgba(0, 0, 0, 0.15)',
+        }}
         aria-label={t(lang, 'menu.userMenuAria')}
       >
-        <div className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-gradient-to-br from-violet-500 to-fuchsia-500 text-[11px] font-semibold text-white">
+        <div
+          style={{
+            width: '32px',
+            height: '32px',
+            borderRadius: '50%',
+            background: 'linear-gradient(135deg, #8b5cf6, #d946ef)',
+            color: 'white',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            fontSize: '12px',
+            fontWeight: 700,
+            flexShrink: 0,
+          }}
+        >
           {initial}
         </div>
-        <div className="min-w-0 flex-1 text-left leading-tight">
-          <div className="truncate text-[12px] font-medium">
+        <div style={{ flex: 1, minWidth: 0, lineHeight: 1.2 }}>
+          <div style={{ fontSize: '12px', fontWeight: 600, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
             {user.display_name || user.email.split('@')[0]}
           </div>
-          <div className="truncate text-[10px] text-zinc-500 dark:text-zinc-400">
+          <div style={{ fontSize: '10px', opacity: 0.8, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
             {user.email}
           </div>
         </div>
-        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="text-zinc-400">
+        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" style={{ flexShrink: 0, opacity: 0.7 }}>
           <path d="M6 9l6 6 6-6" />
         </svg>
       </button>
 
       {open && (
-        <div className="absolute bottom-full left-0 right-0 mb-2 overflow-hidden rounded-xl border border-zinc-200 bg-white shadow-xl dark:border-zinc-800 dark:bg-zinc-900">
+        <div
+          style={{
+            position: 'fixed',
+            left: '8px',
+            right: 'auto',
+            width: '244px',
+            bottom: '68px',
+            zIndex: 50,
+          }}
+          className="overflow-hidden rounded-xl border border-zinc-200 bg-white shadow-xl dark:border-zinc-800 dark:bg-zinc-900"
+        >
           <div className="border-b border-zinc-100 px-3 py-2.5 dark:border-zinc-800">
             <div className="text-[12px] font-semibold text-zinc-900 dark:text-zinc-100">
               {user.display_name || user.email}
@@ -555,7 +587,7 @@ function UserMenu({
           </button>
         </div>
       )}
-    </div>
+    </>
   );
 }
 
@@ -1071,9 +1103,9 @@ export default function Home() {
   }
 
   return (
-    <div className="flex h-full min-h-screen bg-white text-zinc-900 dark:bg-zinc-950 dark:text-zinc-100">
+    <div className="flex h-screen overflow-hidden bg-white text-zinc-900 dark:bg-zinc-950 dark:text-zinc-100">
       {sidebarOpen && (
-        <div className="hidden w-[260px] shrink-0 sm:block">
+        <div className="hidden h-full w-[260px] shrink-0 sm:block">
           <Sidebar
             lang={lang}
             setLang={setLang}
@@ -1088,6 +1120,20 @@ export default function Home() {
             onLogout={logout}
           />
         </div>
+      )}
+
+      {/* FALLBACK user pill: fixed position at the very bottom-left.
+          This is OUTSIDE the sidebar so it can never be hidden by sidebar
+          rendering quirks. Renders only when logged in. */}
+      {currentUser && (
+        <UserMenu
+          user={currentUser}
+          lang={lang}
+          setLang={setLang}
+          theme={theme}
+          setTheme={setTheme}
+          onLogout={logout}
+        />
       )}
 
       <div className="flex min-w-0 flex-1 flex-col">
