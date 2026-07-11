@@ -169,7 +169,7 @@ function Sidebar({
   onLogout: () => void;
   narrow: boolean;
 }) {
-  const [sourcesOpen, setSourcesOpen] = useState(false);
+  const [openPanel, setOpenPanel] = useState<null | 'sources' | 'insights' | 'memories'>(null);
 
   // Inline sidebar colors (no `dark:` Tailwind) — avoids the Chromium
   // dark-mode compositing bug where descendants render as the aside's bg.
@@ -269,27 +269,33 @@ function Sidebar({
         </div>
       </div>
 
-      {/* Sources — collapsed by default, very compact */}
+      {/* Library buttons — 3 panels (insights / memories / sources), each
+          opens as a modal overlay. Only one open at a time. */}
       <div className="border-t border-zinc-200 px-1.5 py-2 dark:border-zinc-800">
-        <button
-          onClick={() => setSourcesOpen((o) => !o)}
-          title={t(lang, 'sidebar.sources')}
-          className={`flex w-full items-center ${narrow ? 'justify-center px-0' : 'justify-between'} gap-2 rounded-md px-3 py-1.5 text-[12px] text-zinc-600 transition hover:bg-zinc-200/40 hover:text-zinc-900 dark:text-zinc-300 dark:hover:bg-zinc-800/40 dark:hover:text-zinc-50`}
-        >
-          <span className="flex items-center gap-1.5">
-            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-              <circle cx="12" cy="12" r="3" />
-              <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z" />
-            </svg>
-            {!narrow && t(lang, 'sidebar.sources')}
-          </span>
-          {!narrow && <span>{sourcesOpen ? '−' : '+'}</span>}
-        </button>
-        {sourcesOpen && !narrow && (
-          <div className="mt-2 px-2">
-            <SourcesPanel lang={lang} />
-          </div>
-        )}
+        <LibraryButton
+          lang={lang}
+          narrow={narrow}
+          label={t(lang, 'sidebar.insights')}
+          icon={<InsightsIcon />}
+          active={openPanel === 'insights'}
+          onClick={() => setOpenPanel(openPanel === 'insights' ? null : 'insights')}
+        />
+        <LibraryButton
+          lang={lang}
+          narrow={narrow}
+          label={t(lang, 'sidebar.memories')}
+          icon={<MemoryIcon />}
+          active={openPanel === 'memories'}
+          onClick={() => setOpenPanel(openPanel === 'memories' ? null : 'memories')}
+        />
+        <LibraryButton
+          lang={lang}
+          narrow={narrow}
+          label={t(lang, 'sidebar.sources')}
+          icon={<SourcesIcon />}
+          active={openPanel === 'sources'}
+          onClick={() => setOpenPanel(openPanel === 'sources' ? null : 'sources')}
+        />
       </div>
 
       {/* User pill — at the very bottom of the sidebar (ChatGPT pattern). */}
@@ -320,12 +326,91 @@ function Sidebar({
           />
         </div>
       )}
+
+      {/* Library modal (insights / memories / sources) */}
+      <LibraryModal
+        open={openPanel !== null}
+        onClose={() => setOpenPanel(null)}
+        title={
+          openPanel === 'insights'
+            ? t(lang, 'insights.title')
+            : openPanel === 'memories'
+            ? t(lang, 'memories.title')
+            : t(lang, 'sidebar.sources')
+        }
+        theme={theme}
+      >
+        {openPanel === 'insights' && <InsightsPanel lang={lang} theme={theme} />}
+        {openPanel === 'memories' && <MemoriesPanel lang={lang} theme={theme} />}
+        {openPanel === 'sources' && <SourcesPanel lang={lang} />}
+      </LibraryModal>
     </aside>
   );
 }
 
 // ─────────────────────────────────────────────────────────────────────
-// Sources panel (sub-component — used inside the sidebar)
+// Library nav buttons + icons (sidebar bottom section)
+// ─────────────────────────────────────────────────────────────────────
+
+function LibraryButton({
+  narrow,
+  label,
+  icon,
+  active,
+  onClick,
+}: {
+  lang: Lang;
+  narrow: boolean;
+  label: string;
+  icon: React.ReactNode;
+  active: boolean;
+  onClick: () => void;
+}) {
+  return (
+    <button
+      onClick={onClick}
+      title={label}
+      className={`flex w-full items-center ${narrow ? 'justify-center px-0' : 'gap-2'} rounded-md px-3 py-1.5 text-[12px] transition ${
+        active
+          ? 'bg-zinc-200/70 text-zinc-900 dark:bg-zinc-800 dark:text-zinc-50'
+          : 'text-zinc-600 hover:bg-zinc-200/40 hover:text-zinc-900 dark:text-zinc-300 dark:hover:bg-zinc-800/40 dark:hover:text-zinc-50'
+      }`}
+    >
+      {icon}
+      {!narrow && <span className="flex-1 text-left">{label}</span>}
+    </button>
+  );
+}
+
+function InsightsIcon() {
+  return (
+    <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M12 2L9 9l-7 1 5 5-1 7 6-3 6 3-1-7 5-5-7-1z" />
+    </svg>
+  );
+}
+
+function MemoryIcon() {
+  return (
+    <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M21 12a9 9 0 1 1-9-9" />
+      <path d="M21 3v6h-6" />
+      <path d="M3 21l6-6" />
+    </svg>
+  );
+}
+
+function SourcesIcon() {
+  return (
+    <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+      <circle cx="12" cy="12" r="3" />
+      <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z" />
+    </svg>
+  );
+}
+
+// ─────────────────────────────────────────────────────────────────────
+// Sources panel (sub-component — used inside the modal)
 // ─────────────────────────────────────────────────────────────────────
 
 function SourcesPanel({ lang }: { lang: Lang }) {
@@ -461,6 +546,445 @@ function SourcesPanel({ lang }: { lang: Lang }) {
           </div>
         );
       })}
+    </div>
+  );
+}
+
+// ─────────────────────────────────────────────────────────────────────
+// Insights panel (沉淀 library — list, view, copy, download, delete)
+// ─────────────────────────────────────────────────────────────────────
+
+type Insight = {
+  id: string;
+  user_id: string;
+  kind: string;
+  title: string;
+  body: string;
+  tags: string[] | null;
+  source_conversation_id: string | null;
+  metadata: unknown;
+  created_at: string;
+};
+
+const KIND_LABELS: Record<string, string> = {
+  reflection: 'insights.kind.reflection',
+  project_breakdown: 'insights.kind.project_breakdown',
+  method: 'insights.kind.method',
+  discovery: 'insights.kind.discovery',
+  sharing: 'insights.kind.sharing',
+  fragment: 'insights.kind.fragment',
+};
+
+function InsightsPanel({ lang, theme }: { lang: Lang; theme: Theme }) {
+  const [insights, setInsights] = useState<Insight[]>([]);
+  const [loading, setLoading] = useState(false);
+  const [expandedId, setExpandedId] = useState<string | null>(null);
+  const [copiedId, setCopiedId] = useState<string | null>(null);
+
+  const load = useCallback(async () => {
+    setLoading(true);
+    try {
+      const r = await fetch('/api/insights?limit=200', { cache: 'no-store' });
+      if (r.ok) {
+        const data = (await r.json()) as { insights: Insight[] };
+        setInsights(data.insights ?? []);
+      }
+    } catch {
+      // ignore
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    load();
+  }, [load]);
+
+  const remove = async (id: string) => {
+    if (!confirm(t(lang, 'insights.confirmDelete'))) return;
+    try {
+      const r = await fetch(`/api/insights/${id}`, { method: 'DELETE' });
+      if (r.ok) await load();
+    } catch {
+      // ignore
+    }
+  };
+
+  const copy = async (it: Insight) => {
+    const text = `${it.title}\n\n${it.body}${it.tags?.length ? `\n\n#${it.tags.join(' #')}` : ''}`;
+    try {
+      await navigator.clipboard.writeText(text);
+      setCopiedId(it.id);
+      setTimeout(() => setCopiedId(null), 1500);
+    } catch {
+      // ignore
+    }
+  };
+
+  const downloadOne = (it: Insight) => {
+    const md = `# ${it.title}\n\n_Kind: ${it.kind}_\n_Date: ${it.created_at}_\n${it.tags?.length ? `\nTags: ${it.tags.map((t) => `#${t}`).join(' ')}\n` : ''}\n---\n\n${it.body}\n`;
+    const blob = new Blob([md], { type: 'text/markdown;charset=utf-8' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `${t(lang, 'insights.exportFilename')}-${it.id.slice(0, 8)}.md`;
+    a.click();
+    URL.revokeObjectURL(url);
+  };
+
+  const downloadAll = () => {
+    if (insights.length === 0) return;
+    const header = `# ${t(lang, 'insights.title')} — ${insights.length} 条\n_导出时间: ${new Date().toISOString()}_\n\n---\n\n`;
+    const body = insights
+      .map(
+        (it) =>
+          `## ${it.title}\n\n**Kind:** ${it.kind}  ·  **Date:** ${it.created_at}${it.tags?.length ? `  ·  **Tags:** ${it.tags.map((t) => `#${t}`).join(' ')}` : ''}\n\n${it.body}\n`,
+      )
+      .join('\n---\n\n');
+    const blob = new Blob([header + body], { type: 'text/markdown;charset=utf-8' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `${t(lang, 'insights.exportFilename')}-${new Date().toISOString().slice(0, 10)}.md`;
+    a.click();
+    URL.revokeObjectURL(url);
+  };
+
+  // Inline-styled colors to dodge the chromium dark-mode compositing bug.
+  const cardBg = theme === 'dark' ? '#18181b' : '#ffffff';
+  const cardBorder = theme === 'dark' ? '#27272a' : '#e4e4e7';
+  const muted = theme === 'dark' ? '#a1a1aa' : '#71717a';
+  const codeBg = theme === 'dark' ? '#27272a' : '#f4f4f5';
+
+  return (
+    <div>
+      <div className="mb-3 flex items-center justify-between">
+        <div className="text-[11px] text-zinc-500 dark:text-zinc-400">
+          {loading
+            ? t(lang, 'source.statusMsg.loading')
+            : insights.length === 0
+            ? ''
+            : `${insights.length} 条`}
+        </div>
+        {insights.length > 0 && (
+          <button
+            onClick={downloadAll}
+            className="rounded bg-violet-600 px-2.5 py-1 text-[10px] font-medium text-white hover:bg-violet-500"
+          >
+            ⬇ {t(lang, 'insights.btn.deleteAll')}
+          </button>
+        )}
+      </div>
+
+      {insights.length === 0 && !loading && (
+        <div
+          style={{
+            padding: '24px 16px',
+            textAlign: 'center',
+            color: muted,
+            fontSize: '12px',
+            border: `1px dashed ${cardBorder}`,
+            borderRadius: '8px',
+            backgroundColor: codeBg,
+          }}
+        >
+          {t(lang, 'insights.empty')}
+        </div>
+      )}
+
+      <div className="space-y-2">
+        {insights.map((it) => {
+          const expanded = expandedId === it.id;
+          const kindKey = KIND_LABELS[it.kind];
+          return (
+            <div
+              key={it.id}
+              style={{
+                border: `1px solid ${cardBorder}`,
+                borderRadius: '8px',
+                backgroundColor: cardBg,
+                padding: '10px 12px',
+              }}
+            >
+              <div className="flex items-start gap-2">
+                <span
+                  className="mt-0.5 shrink-0 rounded px-1.5 py-0.5 text-[9px] font-medium uppercase tracking-wider"
+                  style={{ backgroundColor: codeBg, color: muted }}
+                  title={it.kind}
+                >
+                  {kindKey ? t(lang, kindKey as DictKey) : it.kind}
+                </span>
+                <div className="min-w-0 flex-1">
+                  <div
+                    className="truncate text-[12px] font-semibold"
+                    style={{ color: theme === 'dark' ? '#fafafa' : '#18181b' }}
+                    title={it.title}
+                  >
+                    {it.title}
+                  </div>
+                  <div className="text-[10px]" style={{ color: muted }}>
+                    {new Date(it.created_at).toLocaleString(
+                      lang === 'zh' ? 'zh-CN' : 'en-US',
+                    )}
+                    {it.tags?.length ? ` · ${it.tags.map((tg) => '#' + tg).join(' ')}` : ''}
+                  </div>
+                </div>
+              </div>
+
+              {expanded && (
+                <pre
+                  className="mt-2 max-h-72 overflow-auto whitespace-pre-wrap rounded p-2 text-[11px]"
+                  style={{
+                    backgroundColor: codeBg,
+                    color: theme === 'dark' ? '#e4e4e7' : '#27272a',
+                    fontFamily: 'inherit',
+                  }}
+                >
+                  {it.body}
+                </pre>
+              )}
+
+              <div className="mt-2 flex flex-wrap gap-1">
+                <button
+                  onClick={() => setExpandedId(expanded ? null : it.id)}
+                  className="rounded bg-zinc-100 px-2 py-1 text-[10px] text-zinc-600 hover:bg-zinc-200 dark:bg-zinc-800 dark:text-zinc-300 dark:hover:bg-zinc-700"
+                >
+                  {expanded ? '收起' : '查看'}
+                </button>
+                <button
+                  onClick={() => copy(it)}
+                  className="rounded bg-zinc-100 px-2 py-1 text-[10px] text-zinc-600 hover:bg-zinc-200 dark:bg-zinc-800 dark:text-zinc-300 dark:hover:bg-zinc-700"
+                >
+                  {copiedId === it.id ? `✓ ${t(lang, 'insights.btn.copied')}` : `📋 ${t(lang, 'insights.btn.copy')}`}
+                </button>
+                <button
+                  onClick={() => downloadOne(it)}
+                  className="rounded bg-zinc-100 px-2 py-1 text-[10px] text-zinc-600 hover:bg-zinc-200 dark:bg-zinc-800 dark:text-zinc-300 dark:hover:bg-zinc-700"
+                >
+                  ⬇ {t(lang, 'insights.btn.download')}
+                </button>
+                <button
+                  onClick={() => remove(it.id)}
+                  className="ml-auto rounded bg-zinc-100 px-2 py-1 text-[10px] text-zinc-500 hover:bg-red-100 hover:text-red-700 dark:bg-zinc-800 dark:text-zinc-400 dark:hover:bg-red-950 dark:hover:text-red-300"
+                >
+                  🗑 {t(lang, 'insights.btn.delete')}
+                </button>
+              </div>
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
+// ─────────────────────────────────────────────────────────────────────
+// Memories panel (preferences viewer — view, delete agent's KV memory)
+// ─────────────────────────────────────────────────────────────────────
+
+function MemoriesPanel({ lang, theme }: { lang: Lang; theme: Theme }) {
+  const [prefs, setPrefs] = useState<Preference[]>([]);
+  const [loading, setLoading] = useState(false);
+  const [expandedKey, setExpandedKey] = useState<string | null>(null);
+
+  const load = useCallback(async () => {
+    setLoading(true);
+    try {
+      const r = await fetch('/api/preferences', { cache: 'no-store' });
+      if (r.ok) {
+        const data = (await r.json()) as { preferences: Preference[] };
+        setPrefs(data.preferences ?? []);
+      }
+    } catch {
+      // ignore
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    load();
+  }, [load]);
+
+  const remove = async (key: string) => {
+    if (!confirm(t(lang, 'memories.confirmDelete'))) return;
+    try {
+      const r = await fetch(`/api/preferences?key=${encodeURIComponent(key)}`, { method: 'DELETE' });
+      if (r.ok) await load();
+    } catch {
+      // ignore
+    }
+  };
+
+  const cardBg = theme === 'dark' ? '#18181b' : '#ffffff';
+  const cardBorder = theme === 'dark' ? '#27272a' : '#e4e4e7';
+  const muted = theme === 'dark' ? '#a1a1aa' : '#71717a';
+  const codeBg = theme === 'dark' ? '#27272a' : '#f4f4f5';
+
+  return (
+    <div>
+      <div className="mb-3 text-[11px]" style={{ color: muted }}>
+        {loading
+          ? t(lang, 'source.statusMsg.loading')
+          : `${prefs.length} ${t(lang, 'memories.count')}`}
+      </div>
+
+      {prefs.length === 0 && !loading && (
+        <div
+          style={{
+            padding: '24px 16px',
+            textAlign: 'center',
+            color: muted,
+            fontSize: '12px',
+            border: `1px dashed ${cardBorder}`,
+            borderRadius: '8px',
+            backgroundColor: codeBg,
+          }}
+        >
+          {t(lang, 'memories.empty')}
+        </div>
+      )}
+
+      <div className="space-y-1.5">
+        {prefs.map((p) => {
+          const expanded = expandedKey === p.key;
+          return (
+            <div
+              key={p.key}
+              style={{
+                border: `1px solid ${cardBorder}`,
+                borderRadius: '8px',
+                backgroundColor: cardBg,
+                padding: '8px 10px',
+              }}
+            >
+              <div className="flex items-center gap-2">
+                <code
+                  className="flex-1 truncate rounded px-1.5 py-0.5 font-mono text-[10px]"
+                  style={{
+                    backgroundColor: codeBg,
+                    color: theme === 'dark' ? '#e4e4e7' : '#27272a',
+                  }}
+                >
+                  {p.key}
+                </code>
+                <span
+                  className="text-[9px]"
+                  style={{
+                    color: p.has_value
+                      ? theme === 'dark'
+                        ? '#34d399'
+                        : '#059669'
+                      : muted,
+                  }}
+                >
+                  {p.is_secret
+                    ? t(lang, 'memories.secret')
+                    : p.has_value
+                    ? '● set'
+                    : t(lang, 'memories.notSet')}
+                </span>
+                <button
+                  onClick={() => remove(p.key)}
+                  className="rounded bg-zinc-100 px-1.5 py-0.5 text-[9px] text-zinc-500 hover:bg-red-100 hover:text-red-700 dark:bg-zinc-800 dark:text-zinc-400 dark:hover:bg-red-950 dark:hover:text-red-300"
+                >
+                  🗑
+                </button>
+              </div>
+              {!p.is_secret && p.has_value && (
+                <button
+                  onClick={() => setExpandedKey(expanded ? null : p.key)}
+                  className="mt-1 text-[10px]"
+                  style={{ color: muted }}
+                >
+                  {expanded ? '收起' : '查看值'}
+                </button>
+              )}
+              {expanded && !p.is_secret && (
+                <pre
+                  className="mt-1 max-h-40 overflow-auto whitespace-pre-wrap rounded p-2 text-[10px]"
+                  style={{
+                    backgroundColor: codeBg,
+                    color: theme === 'dark' ? '#e4e4e7' : '#27272a',
+                    fontFamily: 'ui-monospace, SFMono-Regular, monospace',
+                  }}
+                >
+                  {JSON.stringify(p.value, null, 2)}
+                </pre>
+              )}
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
+// ─────────────────────────────────────────────────────────────────────
+// LibraryModal — full-page modal wrapper for the 3 panels
+// ─────────────────────────────────────────────────────────────────────
+
+function LibraryModal({
+  open,
+  onClose,
+  title,
+  theme,
+  children,
+}: {
+  open: boolean;
+  onClose: () => void;
+  title: string;
+  theme: Theme;
+  children: React.ReactNode;
+}) {
+  useEffect(() => {
+    if (!open) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') onClose();
+    };
+    document.addEventListener('keydown', onKey);
+    return () => document.removeEventListener('keydown', onKey);
+  }, [open, onClose]);
+
+  if (!open) return null;
+
+  const bg = theme === 'dark' ? '#09090b' : '#ffffff';
+  const border = theme === 'dark' ? '#27272a' : '#e4e4e7';
+
+  return (
+    <div
+      className="fixed inset-0 z-50 flex items-center justify-center"
+      style={{ backgroundColor: 'rgba(0,0,0,0.45)' }}
+      onClick={onClose}
+    >
+      <div
+        className="relative flex h-[80vh] w-full max-w-2xl flex-col rounded-2xl shadow-2xl"
+        style={{ backgroundColor: bg, border: `1px solid ${border}` }}
+        onClick={(e) => e.stopPropagation()}
+      >
+        <div
+          className="flex shrink-0 items-center justify-between border-b px-5 py-3"
+          style={{ borderColor: border }}
+        >
+          <h2
+            className="text-[15px] font-semibold"
+            style={{ color: theme === 'dark' ? '#fafafa' : '#18181b' }}
+          >
+            {title}
+          </h2>
+          <button
+            onClick={onClose}
+            className="rounded-md p-1.5 transition hover:bg-zinc-100 dark:hover:bg-zinc-800/60"
+            style={{ color: theme === 'dark' ? '#a1a1aa' : '#71717a' }}
+            aria-label="Close"
+          >
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+              <path d="M18 6L6 18M6 6l12 12" />
+            </svg>
+          </button>
+        </div>
+        <div className="flex-1 overflow-y-auto px-5 py-4">{children}</div>
+      </div>
     </div>
   );
 }

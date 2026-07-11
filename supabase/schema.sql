@@ -75,6 +75,28 @@ create table if not exists public.vp_user_preferences (
 create index if not exists vp_user_preferences_user_idx
   on public.vp_user_preferences (user_id);
 
+-- ── User insights (v0.4) ───────────────────────────────────────────────
+-- Captured reflections, project breakdowns, methods, discoveries — the
+-- raw material that daily content (Skill 5) draws from. Per-user scoped.
+create table if not exists public.vp_insights (
+  id uuid primary key default gen_random_uuid(),
+  user_id uuid not null references public.vp_users(id) on delete cascade,
+  kind text not null check (kind in ('reflection', 'project_breakdown', 'method', 'discovery', 'sharing', 'fragment')),
+  title text not null,
+  body text not null,
+  tags text[] default '{}',
+  source_conversation_id uuid references public.vp_conversations(id) on delete set null,
+  metadata jsonb default '{}'::jsonb,
+  created_at timestamptz not null default now()
+);
+
+create index if not exists vp_insights_user_idx
+  on public.vp_insights (user_id);
+create index if not exists vp_insights_user_kind_idx
+  on public.vp_insights (user_id, kind);
+create index if not exists vp_insights_user_created_idx
+  on public.vp_insights (user_id, created_at desc);
+
 -- ========================================================================
 -- Future tables (declared in src/lib/db.ts). Uncomment when features ship.
 -- ========================================================================
@@ -171,5 +193,12 @@ create policy "vp_all_anon"
 drop policy if exists "vp_all_anon" on public.vp_user_preferences;
 create policy "vp_all_anon"
   on public.vp_user_preferences for all
+  to anon, authenticated, service_role
+  using (true) with check (true);
+
+alter table public.vp_insights enable row level security;
+drop policy if exists "vp_all_anon" on public.vp_insights;
+create policy "vp_all_anon"
+  on public.vp_insights for all
   to anon, authenticated, service_role
   using (true) with check (true);

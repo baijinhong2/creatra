@@ -132,6 +132,40 @@ const dict = {
   'tool.label.args': { zh: '参数', en: 'args' },
   'tool.label.result': { zh: '结果', en: 'result' },
   'tool.label.error': { zh: '错误', en: 'error' },
+
+  // ── Sidebar — My Insights (沉淀) ─────────────────────────
+  'sidebar.insights': { zh: '我的沉淀', en: 'My insights' },
+  'sidebar.memories': { zh: 'Agent 记忆', en: 'Agent memories' },
+  'insights.title': { zh: '我的沉淀', en: 'My insights' },
+  'insights.empty': {
+    zh: '还没有沉淀。在聊天里说一段有思考的话,agent 会主动问你"要不要存下来"。',
+    en: 'No insights yet. Share something thoughtful in chat and the agent will offer to save it.',
+  },
+  'insights.kind.reflection': { zh: '感悟', en: 'Reflection' },
+  'insights.kind.project_breakdown': { zh: '项目复盘', en: 'Project breakdown' },
+  'insights.kind.method': { zh: '方法论', en: 'Method' },
+  'insights.kind.discovery': { zh: '新发现', en: 'Discovery' },
+  'insights.kind.sharing': { zh: '内容分享', en: 'Sharing' },
+  'insights.kind.fragment': { zh: '碎片', en: 'Fragment' },
+  'insights.btn.copy': { zh: '复制', en: 'Copy' },
+  'insights.btn.copied': { zh: '已复制', en: 'Copied' },
+  'insights.btn.download': { zh: '下载', en: 'Download' },
+  'insights.btn.delete': { zh: '删除', en: 'Delete' },
+  'insights.btn.deleteAll': { zh: '全部下载', en: 'Download all' },
+  'insights.confirmDelete': { zh: '确定删除这条沉淀?', en: 'Delete this insight?' },
+  'insights.exportFilename': { zh: '我的沉淀', en: 'my-insights' },
+
+  // ── Sidebar — Agent memories (preferences viewer) ────────
+  'memories.title': { zh: 'Agent 记忆', en: 'Agent memories' },
+  'memories.empty': {
+    zh: '没有记忆。Agent 会在聊天里自动存你的定位 / token / 凭据。',
+    en: 'No memories yet. The agent saves your positioning / tokens / credentials as you chat.',
+  },
+  'memories.secret': { zh: '● 已设(已隐藏)', en: '● set (redacted)' },
+  'memories.notSet': { zh: '○ 未设', en: '○ not set' },
+  'memories.btn.delete': { zh: '删除', en: 'Delete' },
+  'memories.confirmDelete': { zh: '确定删除这条记忆?', en: 'Delete this memory?' },
+  'memories.count': { zh: '条记忆', en: 'memories' },
 } as const;
 
 export type DictKey = keyof typeof dict;

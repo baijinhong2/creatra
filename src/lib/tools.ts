@@ -475,6 +475,171 @@ async function readPreferencesTool(
   }
 }
 
+// ─── Insights (user-accumulated content) ──────────────────────────────────
+//
+// The agent captures "沉淀" — reflections, project breakdowns, methods,
+// discoveries, sharings, fragments — into vp_insights. Daily-content skill
+// (skill 5) reads from this table to anchor tweets in real user thinking.
+
+const INSIGHT_KINDS = new Set([
+  'reflection',
+  'project_breakdown',
+  'method',
+  'discovery',
+  'sharing',
+  'fragment',
+]);
+
+type InsightRow = {
+  id: string;
+  user_id: string;
+  kind: string;
+  title: string;
+  body: string;
+  tags: string[] | null;
+  source_conversation_id: string | null;
+  metadata: unknown;
+  created_at: string;
+};
+
+async function saveInsight(
+  userId: string,
+  conversationId: string | undefined,
+  args: {
+    kind: string;
+    title: string;
+    body: string;
+    tags?: string[];
+  },
+): Promise<ToolResult> {
+  const kind = String(args.kind ?? '').trim();
+  const title = String(args.title ?? '').trim();
+  const body = String(args.body ?? '').trim();
+  if (!INSIGHT_KINDS.has(kind)) {
+    return { ok: false, error: `kind must be one of: ${[...INSIGHT_KINDS].join(', ')}` };
+  }
+  if (!title) return { ok: false, error: 'title required' };
+  if (!body) return { ok: false, error: 'body required' };
+  if (title.length > 200) return { ok: false, error: 'title too long (≤200 chars)' };
+  if (body.length > 20_000) return { ok: false, error: 'body too long (≤20k chars)' };
+
+  const tags = Array.isArray(args.tags)
+    ? args.tags.filter((t): t is string => typeof t === 'string').slice(0, 20).map((t) => t.slice(0, 60))
+    : [];
+
+  const db = getDb();
+  if (!db) return { ok: false, error: 'DB not available' };
+  try {
+    const r = await db.query<{ id: string }>(
+      `INSERT INTO ${TABLE.insights}
+        (user_id, kind, title, body, tags, source_conversation_id)
+       VALUES ($1, $2, $3, $4, $5::text[], $6::uuid)
+       RETURNING id`,
+      [
+        userId,
+        kind,
+        title,
+        body,
+        tags,
+        conversationId ?? null,
+      ],
+    );
+    return {
+      ok: true,
+      data: {
+        id: r.rows[0]?.id,
+        kind,
+        title,
+        saved: true,
+        // Confirmation for the agent to show the user
+        message: `已沉淀一条 ${kind}: 《${title}》(id=${r.rows[0]?.id})`,
+      },
+    };
+  } catch (e) {
+    return { ok: false, error: e instanceof Error ? e.message : String(e) };
+  }
+}
+
+async function listInsights(
+  userId: string,
+  args: {
+    kind?: string;
+    q?: string;
+    limit?: number;
+  } = {},
+): Promise<ToolResult> {
+  const db = getDb();
+  if (!db) return { ok: false, error: 'DB not available' };
+  const kind = args.kind?.trim() || null;
+  const q = args.q?.trim() || null;
+  const limit = Math.min(Math.max(args.limit ?? 30, 1), 100);
+  if (kind && !INSIGHT_KINDS.has(kind)) {
+    return { ok: false, error: `kind must be one of: ${[...INSIGHT_KINDS].join(', ')}` };
+  }
+  try {
+    const params: unknown[] = [userId];
+    let where = 'user_id = $1';
+    if (kind) {
+      params.push(kind);
+      where += ` AND kind = $${params.length}`;
+    }
+    if (q) {
+      params.push(`%${q}%`);
+      where += ` AND (title ILIKE $${params.length} OR body ILIKE $${params.length})`;
+    }
+    params.push(limit);
+    const r = await db.query<InsightRow>(
+      `SELECT id, user_id, kind, title, body, tags, source_conversation_id, metadata, created_at
+       FROM ${TABLE.insights}
+       WHERE ${where}
+       ORDER BY created_at DESC
+       LIMIT $${params.length}`,
+      params,
+    );
+    return {
+      ok: true,
+      data: {
+        count: r.rows.length,
+        insights: r.rows,
+      },
+    };
+  } catch (e) {
+    return { ok: false, error: e instanceof Error ? e.message : String(e) };
+  }
+}
+
+async function deleteInsight(userId: string, id: string): Promise<ToolResult> {
+  if (!/^[0-9a-f-]{36}$/i.test(id)) {
+    return { ok: false, error: 'id must be a uuid' };
+  }
+  const db = getDb();
+  if (!db) return { ok: false, error: 'DB not available' };
+  try {
+    const r = await db.query(
+      `DELETE FROM ${TABLE.insights} WHERE id = $1::uuid AND user_id = $2`,
+      [id, userId],
+    );
+    if (r.rowCount === 0) return { ok: false, error: 'not found' };
+    return { ok: true, data: { id, deleted: true } };
+  } catch (e) {
+    return { ok: false, error: e instanceof Error ? e.message : String(e) };
+  }
+}
+
+async function searchInsights(
+  userId: string,
+  query: string,
+  limit = 10,
+): Promise<ToolResult> {
+  if (!query || !query.trim()) {
+    return { ok: false, error: 'query required' };
+  }
+  // search_insights is currently just list_insights with a text match —
+  // exposed as its own tool because the agent should reach for "search my
+  // past thinking" semantically distinct from "list recent".
+  return listInsights(userId, { q: query.trim(), limit });
+}
+
 // ─── Tool registry (definitions + dispatch) ───────────────────────────────
 
 export type ToolName =
@@ -486,7 +651,11 @@ export type ToolName =
   | 'twitter_get_tweet_replies'
   | 'suggest_similar_creators'
   | 'remember_preference'
-  | 'read_preferences';
+  | 'read_preferences'
+  | 'save_insight'
+  | 'list_insights'
+  | 'delete_insight'
+  | 'search_insights';
 
 export const TOOL_DEFINITIONS: ToolDefinition[] = [
   {
@@ -618,6 +787,74 @@ export const TOOL_DEFINITIONS: ToolDefinition[] = [
       },
     },
   },
+  {
+    name: 'save_insight',
+    description:
+      "Save a piece of the user's accumulated thinking (a reflection, project breakdown, method, discovery, sharing, or raw fragment) to their long-term content library. The daily-content skill draws from this library to anchor tweets in real user thinking — not generic AI filler. Kinds: 'reflection' (感悟), 'project_breakdown' (项目复盘: 起点/过程/发现/优化), 'method' (方法论), 'discovery' (新发现), 'sharing' (优质内容分享), 'fragment' (碎片想法,先存下来以后再用).",
+    parameters: {
+      type: 'object',
+      properties: {
+        kind: {
+          type: 'string',
+          enum: ['reflection', 'project_breakdown', 'method', 'discovery', 'sharing', 'fragment'],
+          description: 'What kind of insight this is',
+        },
+        title: { type: 'string', description: 'Short title (≤200 chars)' },
+        body: {
+          type: 'string',
+          description:
+            'Full content. For project_breakdown, use the cycle 起点 → 过程 → 发现 → 优化.',
+        },
+        tags: {
+          type: 'array',
+          description: 'Optional short tags, e.g. ["效率", "viralpost"]. Max 20.',
+        },
+      },
+      required: ['kind', 'title', 'body'],
+    },
+  },
+  {
+    name: 'list_insights',
+    description:
+      "List the user's saved insights, newest first. Filter by `kind` or substring `q` (matches title + body). Use this to recall what the user has already captured before generating daily content — anchor tweets in their real thinking, not generic AI filler.",
+    parameters: {
+      type: 'object',
+      properties: {
+        kind: {
+          type: 'string',
+          enum: ['reflection', 'project_breakdown', 'method', 'discovery', 'sharing', 'fragment'],
+          description: 'Optional kind filter',
+        },
+        q: { type: 'string', description: 'Optional substring search (case-insensitive)' },
+        limit: { type: 'string', description: 'Optional, default 30, max 100' },
+      },
+    },
+  },
+  {
+    name: 'delete_insight',
+    description:
+      "Delete one of the user's insights by id. Use when the user says something is no longer relevant or was saved by mistake.",
+    parameters: {
+      type: 'object',
+      properties: {
+        id: { type: 'string', description: 'Insight id (uuid)' },
+      },
+      required: ['id'],
+    },
+  },
+  {
+    name: 'search_insights',
+    description:
+      "Semantic-ish text search over the user's insights. Same as list_insights with a `q` parameter — exposed as a separate tool so the agent can reach for 'search my past thinking' as a distinct intent from 'list recent'.",
+    parameters: {
+      type: 'object',
+      properties: {
+        query: { type: 'string', description: 'Search query' },
+        limit: { type: 'string', description: 'Optional, default 10' },
+      },
+      required: ['query'],
+    },
+  },
 ];
 
 export async function runTool(
@@ -675,6 +912,27 @@ export async function runTool(
         Array.isArray(args.keys)
           ? (args.keys as unknown[]).map(String)
           : undefined,
+      );
+    case 'save_insight':
+      return saveInsight(userId, ctx.conversationId, {
+        kind: String(args.kind ?? ''),
+        title: String(args.title ?? ''),
+        body: String(args.body ?? ''),
+        tags: Array.isArray(args.tags) ? (args.tags as unknown[]).map(String) : undefined,
+      });
+    case 'list_insights':
+      return listInsights(userId, {
+        kind: args.kind ? String(args.kind) : undefined,
+        q: args.q ? String(args.q) : undefined,
+        limit: args.limit ? Number(args.limit) : undefined,
+      });
+    case 'delete_insight':
+      return deleteInsight(userId, String(args.id ?? ''));
+    case 'search_insights':
+      return searchInsights(
+        userId,
+        String(args.query ?? ''),
+        args.limit ? Number(args.limit) : undefined,
       );
     default:
       return { ok: false, error: `Unknown tool: ${name}` };

@@ -48,4 +48,5 @@ export const TABLE = {
   engagementEvents: 'vp_engagement_events',
   similarCreators: 'vp_similar_creators',
   projects: 'vp_user_projects',
+  insights: 'vp_insights',
 } as const;
