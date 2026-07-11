@@ -263,9 +263,9 @@ function Sidebar({
         )}
       </div>
 
-      {/* User pill lives at the page level (fixed bottom-left), not inside
-          the sidebar, so it never gets hidden by sidebar overflow or any
-          dark-mode rendering quirks. */}
+      {/* User pill is rendered at the page level (see below) so it doesn't
+          get hidden by the dark-mode Chromium rendering bug inside the
+          sidebar. */}
     </aside>
   );
 }
@@ -445,14 +445,13 @@ function UserMenu({
   const initial = (user.display_name || user.email).charAt(0).toUpperCase();
 
   return (
-    <div ref={ref}>
+    <div ref={ref} className="relative">
       <button
         onClick={() => setOpen((o) => !o)}
         style={{
           position: 'fixed',
-          left: '12px',
+          left: '272px',
           bottom: '12px',
-          width: '236px',
           zIndex: 40,
           display: 'flex',
           alignItems: 'center',
@@ -502,10 +501,9 @@ function UserMenu({
         <div
           style={{
             position: 'fixed',
-            left: '8px',
-            right: 'auto',
-            width: '244px',
-            bottom: '68px',
+            left: '272px',
+            bottom: '76px',
+            width: '236px',
             zIndex: 50,
           }}
           className="overflow-hidden rounded-xl border border-zinc-200 bg-white shadow-xl dark:border-zinc-800 dark:bg-zinc-900"
@@ -1121,9 +1119,9 @@ export default function Home() {
         </div>
       )}
 
-      {/* FALLBACK user pill: fixed position at the very bottom-left.
-          This is OUTSIDE the sidebar so it can never be hidden by sidebar
-          rendering quirks. Renders only when logged in. */}
+      {/* User pill — fixed at the bottom-left of the main content area
+          (X=268, just past the 260px sidebar). This way it never covers
+          the sidebar's Sources panel. */}
       {currentUser && (
         <UserMenu
           user={currentUser}
