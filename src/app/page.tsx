@@ -431,7 +431,7 @@ function UserMenu({
   onLogout: () => void;
 }) {
   const [open, setOpen] = useState(false);
-  const ref = useRef<HTMLButtonElement>(null);
+  const ref = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     if (!open) return;
@@ -445,9 +445,8 @@ function UserMenu({
   const initial = (user.display_name || user.email).charAt(0).toUpperCase();
 
   return (
-    <>
+    <div ref={ref}>
       <button
-        ref={ref}
         onClick={() => setOpen((o) => !o)}
         style={{
           position: 'fixed',
@@ -587,7 +586,7 @@ function UserMenu({
           </button>
         </div>
       )}
-    </>
+    </div>
   );
 }
 
