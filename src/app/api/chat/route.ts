@@ -1,5 +1,5 @@
 import { NextRequest } from 'next/server';
-import type { ChatMessage } from '@/lib/llm';
+import type { ChatMessage, ContentPart } from '@/lib/llm';
 import { runAgent } from '@/lib/agent';
 import { getDb, TABLE } from '@/lib/db';
 import {
@@ -11,11 +11,14 @@ import {
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
 
+type Attachment = { url: string; mime: string; size: number };
+
 type RequestBody = {
   message: string;
   history?: ChatMessage[];
   conversationId?: string;
   model?: string;
+  attachments?: Attachment[];
 };
 
 function titleFromMessage(text: string): string {
@@ -93,8 +96,51 @@ export async function POST(request: NextRequest) {
     body.message,
   );
   if (conversationId) {
-    await persistMessage(conversationId, user.id, 'user', body.message);
+    // Persist the user message text + attachment metadata in `metadata`
+    // so we can replay history and render thumbnails in the UI.
+    const meta: Record<string, unknown> = {};
+    if (body.attachments && body.attachments.length > 0) {
+      meta.attachments = body.attachments;
+    }
+    await persistMessage(conversationId, user.id, 'user', body.message, meta);
   }
+
+  // Build the user-message content for the LLM. We always include a text
+  // preamble (so the model sees the user's intent + the attachment URLs
+  // as plain text references). When the LLM supports image_url content
+  // parts (vision), we ALSO include the images as `image_url` parts.
+  //
+  // Probed 2026-07-12: DeepSeek V4 rejects image_url parts with HTTP 400
+  // ("unknown variant `image_url`, expected `text`"). For now, image_url
+  // is sent to any model that accepts it (gpt-4o via OpenRouter, etc.)
+  // and DeepSeek V4 falls back to the text-only path. If the call to
+  // DeepSeek errors out, the agent loop surfaces the error to the UI.
+  const hasImages =
+    body.attachments?.some((a) => a.mime.startsWith('image/')) ?? false;
+  const supportsVision = body.model
+    ? body.model.toLowerCase().includes('gpt-4') ||
+      body.model.toLowerCase().includes('vision') ||
+      body.model.toLowerCase().includes('claude-3')
+    : false;
+  const attachmentList = (body.attachments ?? [])
+    .map((a) => `  - ${a.url} (${a.mime}, ${Math.round(a.size / 1024)}KB)`)
+    .join('\n');
+  const preamble =
+    body.attachments && body.attachments.length > 0
+      ? `${body.message}\n\n[附件 ${body.attachments.length} 个:]\n${attachmentList}\n(注:agent 当前模型未必能直接看图;如需描述请用户口述)`
+      : body.message;
+  const userContent: string | ContentPart[] =
+    hasImages && supportsVision
+      ? [
+          { type: 'text', text: preamble },
+          ...body.attachments!
+            .filter((a) => a.mime.startsWith('image/'))
+            .map<ContentPart>((a) => ({
+              type: 'image_url',
+              image_url: { url: a.url },
+            })),
+        ]
+      : preamble;
 
   const encoder = new TextEncoder();
   const stream = new ReadableStream({
@@ -115,7 +161,7 @@ export async function POST(request: NextRequest) {
 
       try {
         for await (const event of runAgent(
-          body.message,
+          userContent,
           body.history ?? [],
           user.id,
           conversationId ?? undefined,

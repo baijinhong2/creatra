@@ -10,7 +10,7 @@
  *   4. If the LLM emits text only → emit `message_end` + `done`, return
  */
 
-import type { ChatMessage, ToolCall } from './llm';
+import type { ChatMessage, ContentPart, ToolCall } from './llm';
 import { chatStream } from './llm';
 import { TOOL_DEFINITIONS, runTool, type ToolName } from './tools';
 import { AGENT_SYSTEM_PROMPT } from './prompts';
@@ -129,7 +129,7 @@ async function* streamOneTurn(
 }
 
 export async function* runAgent(
-  userMessage: string,
+  userMessage: string | ContentPart[],
   history: ChatMessage[] = [],
   userId: string,
   conversationId?: string,

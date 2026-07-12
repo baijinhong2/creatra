@@ -85,10 +85,13 @@ const dict = {
   'menu.userMenuAria': { zh: '打开用户菜单', en: 'Open user menu' },
 
   // ── Composer ─────────────────────────────────────────────
-  'composer.placeholder': { zh: '说点啥。Enter 发送,Shift+Enter 换行。', en: 'Ask anything. Enter to send.' },
+  'composer.placeholder': { zh: '说点啥。Enter 发送,Shift+Enter 换行 · 拖图或点 📎 上传', en: 'Ask anything. Enter to send · drop images or click 📎' },
   'composer.placeholderStreaming': { zh: 'agent 跑着呢…', en: 'Agent is running…' },
   'composer.send': { zh: '发送', en: 'Send' },
   'composer.stop': { zh: '停止', en: 'Stop' },
+  'composer.uploadAria': { zh: '上传图片(最多 10 张)', en: 'Upload images (up to 10)' },
+  'composer.uploadError': { zh: '上传失败:{err}', en: 'Upload failed: {err}' },
+  'composer.removeAttachment': { zh: '移除', en: 'Remove' },
   'composer.footer': {
     zh: 'viralpost 是一个真正的 agent —— 它会自己调工具,调用过程在上面流里能看到。',
     en: 'viralpost is an autonomous agent — it can call tools. Inspect tool calls in the stream.',

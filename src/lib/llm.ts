@@ -51,9 +51,19 @@ export type ToolDefinition = {
 
 export type ChatMessageRole = 'system' | 'user' | 'assistant' | 'tool';
 
+/**
+ * Multi-modal content parts. `image_url` follows the OpenAI / DeepSeek
+ * vision format — `url` can be a public http(s) URL OR a data URI
+ * (`data:image/png;base64,...`). DeepSeek's V3/V4 may not support this
+ * yet; if it errors, the chat route falls back to text-only.
+ */
+export type ContentPart =
+  | { type: 'text'; text: string }
+  | { type: 'image_url'; image_url: { url: string } };
+
 export type ChatMessage =
   | { role: 'system'; content: string }
-  | { role: 'user'; content: string }
+  | { role: 'user'; content: string | ContentPart[] }
   | { role: 'assistant'; content?: string; tool_calls?: ToolCall[] }
   | { role: 'tool'; tool_call_id: string; content: string };
 

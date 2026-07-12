@@ -21,10 +21,13 @@ import {
 
 // ─── Types ─────────────────────────────────────────────────────────────
 
+type Attachment = { url: string; mime: string; size: number };
+
 type DisplayMessage = {
   id: string;
   role: 'user' | 'assistant';
   content: string;
+  attachments?: Attachment[];
 };
 
 type ToolCallDisplay = {
@@ -1486,6 +1489,8 @@ export default function Home() {
 
   // Sidebar collapses from 260px to 60px (icon rail). Never unmounts.
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
+  const [pendingAttachments, setPendingAttachments] = useState<Attachment[]>([]);
+  const [lightboxUrl, setLightboxUrl] = useState<string | null>(null);
   const sidebarWidth = sidebarCollapsed ? 60 : 260;
   const [conversations, setConversations] = useState<ConversationSummary[]>([]);
 
@@ -1553,6 +1558,7 @@ export default function Home() {
           id: string;
           role: 'user' | 'assistant';
           content: string | null;
+          metadata?: { attachments?: Attachment[] };
         }>;
       };
       const restored: DisplayMessage[] = (data.messages ?? [])
@@ -1561,6 +1567,7 @@ export default function Home() {
           id: m.id,
           role: m.role,
           content: m.content ?? '',
+          attachments: m.metadata?.attachments,
         }));
       setMessages(restored);
     } catch {
@@ -1649,6 +1656,7 @@ export default function Home() {
             id: string;
             role: 'user' | 'assistant';
             content: string | null;
+            metadata?: { attachments?: Attachment[] };
           }>;
         };
         const restored: DisplayMessage[] = (data.messages ?? [])
@@ -1657,6 +1665,7 @@ export default function Home() {
             id: m.id,
             role: m.role,
             content: m.content ?? '',
+            attachments: m.metadata?.attachments,
           }));
         if (restored.length > 0) setMessages(restored);
       } catch {
@@ -1691,6 +1700,7 @@ export default function Home() {
         id: `user_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`,
         role: 'user',
         content: trimmed,
+        attachments: pendingAttachments.length > 0 ? pendingAttachments : undefined,
       };
 
       const history = messages.map((m) => ({
@@ -1700,6 +1710,7 @@ export default function Home() {
       const nextMessages = [...messages, userMsg];
       setMessages(nextMessages);
       setInput('');
+      setPendingAttachments([]); // clear after send
       setStatus('streaming');
 
       const streamId = `asst_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`;
@@ -1718,6 +1729,7 @@ export default function Home() {
             history,
             conversationId: conversationIdRef.current,
             model,
+            attachments: pendingAttachments,
           }),
           signal: controller.signal,
         });
@@ -1934,6 +1946,7 @@ export default function Home() {
                 streamingText={streamingText}
                 status={status}
                 error={error}
+                onLightbox={setLightboxUrl}
               />
             )}
             <div ref={messagesEndRef} />
@@ -1949,8 +1962,33 @@ export default function Home() {
           onStop={stop}
           onKeyDown={handleKeyDown}
           inputRef={inputRef}
+          pendingAttachments={pendingAttachments}
+          setPendingAttachments={setPendingAttachments}
+          onLightbox={setLightboxUrl}
         />
       </div>
+
+      {/* Image lightbox */}
+      {lightboxUrl && (
+        <div
+          className="fixed inset-0 z-[60] flex items-center justify-center bg-black/80 p-8"
+          onClick={() => setLightboxUrl(null)}
+        >
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          <img
+            src={lightboxUrl}
+            alt=""
+            className="max-h-full max-w-full rounded-lg"
+          />
+          <button
+            onClick={() => setLightboxUrl(null)}
+            className="absolute right-4 top-4 flex h-8 w-8 items-center justify-center rounded-full bg-white/20 text-2xl text-white hover:bg-white/40"
+            aria-label="Close"
+          >
+            ×
+          </button>
+        </div>
+      )}
     </div>
   );
 }
@@ -2008,6 +2046,7 @@ function MessageList({
   streamingText,
   status,
   error,
+  onLightbox,
 }: {
   messages: DisplayMessage[];
   toolCalls: ToolCallDisplay[];
@@ -2015,6 +2054,7 @@ function MessageList({
   streamingText: string;
   status: 'idle' | 'streaming';
   error: string | null;
+  onLightbox: (url: string) => void;
 }) {
   const items: Array<
     | { kind: 'message'; msg: DisplayMessage }
@@ -2037,7 +2077,7 @@ function MessageList({
   return (
     <div className="flex flex-col gap-7">
       {items.map((it, i) => {
-        if (it.kind === 'message') return <Bubble key={it.msg.id} msg={it.msg} />;
+        if (it.kind === 'message') return <Bubble key={it.msg.id} msg={it.msg} onLightbox={onLightbox} />;
         if (it.kind === 'streaming-bubble')
           return (
             <AssistantStreamBubble
@@ -2060,13 +2100,30 @@ function MessageList({
   );
 }
 
-function Bubble({ msg }: { msg: DisplayMessage }) {
+function Bubble({ msg, onLightbox }: { msg: DisplayMessage; onLightbox?: (url: string) => void }) {
+  const attachments = msg.attachments ?? [];
   if (msg.role === 'user') {
     // ChatGPT: user messages have a subtle rounded bg, no bubble border.
     return (
       <div className="flex justify-end">
         <div className="max-w-[85%] rounded-2xl rounded-br-md bg-zinc-100 px-4 py-2 text-[14px] text-zinc-900 dark:bg-zinc-800 dark:text-zinc-100">
-          <div className="whitespace-pre-wrap break-words">{msg.content}</div>
+          {attachments.length > 0 && (
+            <div className="mb-2 flex flex-wrap gap-1.5">
+              {attachments.map((a) => (
+                /* eslint-disable-next-line @next/next/no-img-element */
+                <img
+                  key={a.url}
+                  src={a.url}
+                  alt=""
+                  className="h-32 w-32 cursor-pointer rounded-lg border border-zinc-200 object-cover transition hover:opacity-90 dark:border-zinc-700"
+                  onClick={() => onLightbox?.(a.url)}
+                />
+              ))}
+            </div>
+          )}
+          {msg.content && (
+            <div className="whitespace-pre-wrap break-words">{msg.content}</div>
+          )}
         </div>
       </div>
     );
@@ -2165,6 +2222,9 @@ function Composer({
   onStop,
   onKeyDown,
   inputRef,
+  pendingAttachments,
+  setPendingAttachments,
+  onLightbox,
 }: {
   lang: Lang;
   input: string;
@@ -2174,30 +2234,164 @@ function Composer({
   onStop: () => void;
   onKeyDown: (e: React.KeyboardEvent<HTMLTextAreaElement>) => void;
   inputRef: React.RefObject<HTMLTextAreaElement | null>;
+  pendingAttachments: Attachment[];
+  setPendingAttachments: (a: Attachment[]) => void;
+  onLightbox: (url: string) => void;
 }) {
   const streaming = status === 'streaming';
+  const fileInputRef = useRef<HTMLInputElement>(null);
+  const [dragOver, setDragOver] = useState(false);
+  const [uploadError, setUploadError] = useState<string | null>(null);
+
+  const MAX_IMAGES = 10;
+  const MAX_BYTES = 5 * 1024 * 1024;
+  const ALLOWED = ['image/png', 'image/jpeg', 'image/jpg', 'image/webp', 'image/gif'];
+
+  const uploadFiles = async (files: FileList | File[]) => {
+    setUploadError(null);
+    const arr = Array.from(files);
+    if (pendingAttachments.length + arr.length > MAX_IMAGES) {
+      setUploadError(`最多 ${MAX_IMAGES} 张,当前 ${pendingAttachments.length} 张`);
+      return;
+    }
+    for (const f of arr) {
+      if (!ALLOWED.includes(f.type)) {
+        setUploadError(`不支持 ${f.type}`);
+        return;
+      }
+      if (f.size > MAX_BYTES) {
+        setUploadError(`${f.name} 超过 5MB`);
+        return;
+      }
+    }
+    const fd = new FormData();
+    for (const f of arr) fd.append('files', f);
+    try {
+      const r = await fetch('/api/upload', { method: 'POST', body: fd });
+      if (!r.ok) {
+        const data = await r.json().catch(() => ({}));
+        setUploadError(data.error ?? '上传失败');
+        return;
+      }
+      const data = (await r.json()) as { files: Attachment[] };
+      setPendingAttachments([...pendingAttachments, ...data.files]);
+    } catch (e) {
+      setUploadError(e instanceof Error ? e.message : '网络错误');
+    }
+  };
+
+  const onFilePick = (e: React.ChangeEvent<HTMLInputElement>) => {
+    if (e.target.files && e.target.files.length > 0) {
+      uploadFiles(e.target.files);
+      e.target.value = ''; // allow re-selecting same file
+    }
+  };
+
+  const onDrop = (e: React.DragEvent<HTMLDivElement>) => {
+    e.preventDefault();
+    setDragOver(false);
+    if (e.dataTransfer?.files && e.dataTransfer.files.length > 0) {
+      uploadFiles(e.dataTransfer.files);
+    }
+  };
+
   return (
     <div className="pointer-events-none absolute inset-x-0 bottom-0 z-10 bg-gradient-to-t from-white via-white to-white/0 pb-4 pt-12 dark:from-zinc-950 dark:via-zinc-950 dark:to-zinc-950/0">
       <form
         onSubmit={onSubmit}
         className="pointer-events-auto mx-auto flex max-w-3xl items-end gap-2 px-4"
       >
-        <div className="flex-1 rounded-3xl border border-zinc-200 bg-white shadow-sm transition focus-within:border-zinc-300 focus-within:shadow-md dark:border-zinc-800 dark:bg-zinc-900 dark:focus-within:border-zinc-700">
-          <textarea
-            ref={inputRef}
-            rows={1}
-            value={input}
-            onChange={(e) => setInput(e.target.value)}
-            onKeyDown={onKeyDown}
-            placeholder={
-              streaming
-                ? 'agent 跑着呢…'
-                : '问点啥,Enter 发送,Shift+Enter 换行'
-            }
-            disabled={streaming}
-            className="w-full resize-none bg-transparent px-5 py-3.5 text-[15px] text-zinc-900 placeholder:text-zinc-400 focus:outline-none disabled:opacity-50 dark:text-zinc-100 dark:placeholder:text-zinc-500"
-            style={{ minHeight: '24px', maxHeight: '220px' }}
-          />
+        <div
+          className={`flex-1 rounded-3xl border bg-white shadow-sm transition focus-within:border-zinc-300 focus-within:shadow-md dark:bg-zinc-900 dark:focus-within:border-zinc-700 ${
+            dragOver
+              ? 'border-violet-500 ring-2 ring-violet-300'
+              : 'border-zinc-200 dark:border-zinc-800'
+          }`}
+          onDragOver={(e) => {
+            e.preventDefault();
+            setDragOver(true);
+          }}
+          onDragLeave={() => setDragOver(false)}
+          onDrop={onDrop}
+        >
+          {/* Pending attachments preview */}
+          {pendingAttachments.length > 0 && (
+            <div className="flex flex-wrap gap-2 px-3 pt-3">
+              {pendingAttachments.map((a, i) => (
+                <div
+                  key={a.url}
+                  className="group relative h-16 w-16 shrink-0 overflow-hidden rounded-lg border border-zinc-200 dark:border-zinc-700"
+                >
+                  {/* eslint-disable-next-line @next/next/no-img-element */}
+                  <img
+                    src={a.url}
+                    alt=""
+                    className="h-full w-full object-cover"
+                    onClick={() => onLightbox(a.url)}
+                  />
+                  <button
+                    type="button"
+                    onClick={() =>
+                      setPendingAttachments(
+                        pendingAttachments.filter((_, idx) => idx !== i),
+                      )
+                    }
+                    className="absolute right-0.5 top-0.5 hidden h-4 w-4 items-center justify-center rounded-full bg-black/70 text-[10px] text-white group-hover:flex"
+                    aria-label="Remove"
+                  >
+                    ×
+                  </button>
+                </div>
+              ))}
+              <div className="flex h-16 items-center px-1 text-[10px] text-zinc-500">
+                {pendingAttachments.length} / {MAX_IMAGES}
+              </div>
+            </div>
+          )}
+          {/* Upload error */}
+          {uploadError && (
+            <div className="px-4 pt-2 text-[11px] text-red-600 dark:text-red-400">
+              {uploadError}
+            </div>
+          )}
+          <div className="flex items-end gap-1 px-2 py-1.5">
+            {/* Upload button */}
+            <button
+              type="button"
+              onClick={() => fileInputRef.current?.click()}
+              disabled={streaming || pendingAttachments.length >= MAX_IMAGES}
+              className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full text-zinc-500 transition hover:bg-zinc-100 disabled:opacity-30 dark:text-zinc-400 dark:hover:bg-zinc-800"
+              aria-label="Upload images"
+              title="上传图片（最多 10 张）"
+            >
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <path d="M21.44 11.05l-9.19 9.19a6 6 0 0 1-8.49-8.49l9.19-9.19a4 4 0 0 1 5.66 5.66l-9.2 9.19a2 2 0 0 1-2.83-2.83l8.49-8.48" />
+              </svg>
+            </button>
+            <input
+              ref={fileInputRef}
+              type="file"
+              accept="image/png,image/jpeg,image/jpg,image/webp,image/gif"
+              multiple
+              className="hidden"
+              onChange={onFilePick}
+            />
+            <textarea
+              ref={inputRef}
+              rows={1}
+              value={input}
+              onChange={(e) => setInput(e.target.value)}
+              onKeyDown={onKeyDown}
+              placeholder={
+                streaming
+                  ? 'agent 跑着呢…'
+                  : '问点啥,Enter 发送,Shift+Enter 换行 · 拖图或点 📎 上传'
+              }
+              disabled={streaming}
+              className="w-full resize-none bg-transparent px-2 py-2 text-[15px] text-zinc-900 placeholder:text-zinc-400 focus:outline-none disabled:opacity-50 dark:text-zinc-100 dark:placeholder:text-zinc-500"
+              style={{ minHeight: '24px', maxHeight: '220px' }}
+            />
+          </div>
         </div>
         <button
           type={streaming ? 'button' : 'submit'}
@@ -2207,7 +2401,7 @@ function Composer({
               ? 'bg-zinc-100 text-zinc-700 hover:bg-zinc-200 dark:bg-zinc-800 dark:text-zinc-200 dark:hover:bg-zinc-700'
               : 'bg-zinc-900 text-white shadow-sm hover:bg-zinc-700 dark:bg-zinc-100 dark:text-zinc-900 dark:hover:bg-white'
           }`}
-          disabled={!streaming && !input.trim()}
+          disabled={!streaming && !input.trim() && pendingAttachments.length === 0}
           aria-label={streaming ? 'Stop' : 'Send'}
         >
           {streaming ? (
