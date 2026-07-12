@@ -7,11 +7,31 @@ import {
   userFromSession,
   AuthError,
 } from '@/lib/auth';
+import { readFile } from 'fs/promises';
+import path from 'path';
+// pdf-parse-debugging-disabled is a fork that disables the legacy debug
+// entrypoint; both have the same API. We import lazily to keep the
+// cold-start footprint smaller. Relative import because this dep
+// isn't in package.json (we installed it manually to bypass an npm
+// dedup bug with its ^0.0.0 node-ensure dep).
+type PdfParseFn = (buf: Buffer, opts?: Record<string, unknown>) => Promise<{ text: string; numpages: number; info: unknown }>;
+async function loadPdfParse(): Promise<PdfParseFn> {
+  // eslint-disable-next-line @typescript-eslint/no-require-imports
+  const mod = require('pdf-parse-debugging-disabled');
+  return (mod.default ?? mod) as PdfParseFn;
+}
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
 
-type Attachment = { url: string; mime: string; size: number };
+type Attachment = {
+  url: string;
+  mime: string;
+  size: number;
+  name?: string;
+  kind?: 'image' | 'text' | 'pdf' | 'other';
+  ext?: string;
+};
 
 type RequestBody = {
   message: string;
@@ -122,13 +142,60 @@ export async function POST(request: NextRequest) {
       body.model.toLowerCase().includes('vision') ||
       body.model.toLowerCase().includes('claude-3')
     : false;
+
+  // Read text content + extract PDF text so the agent can use them inline.
+  // Vision images stay as URLs (model can see them with vision support).
+  const MAX_TEXT_CHARS = 50_000; // 50KB of text per file is plenty for chat
+  const inlineBlocks: string[] = [];
+  for (const a of body.attachments ?? []) {
+    const filePath = path.join(process.cwd(), 'public', a.url);
+    const fileName = a.name ?? a.url.split('/').pop() ?? a.url;
+    try {
+      if (a.kind === 'text') {
+        const buf = await readFile(filePath);
+        const text = buf.toString('utf-8');
+        const truncated = text.length > MAX_TEXT_CHARS;
+        const content = truncated
+          ? text.slice(0, MAX_TEXT_CHARS) + '\n... [truncated]'
+          : text;
+        inlineBlocks.push(
+          `### 📄 ${fileName} (${a.ext}, ${Math.round(a.size / 1024)}KB)\n\`\`\`${a.ext ?? ''}\n${content}\n\`\`\``,
+        );
+      } else if (a.kind === 'pdf') {
+        const buf = await readFile(filePath);
+        const pdfParse = await loadPdfParse();
+        const parsed = await pdfParse(buf);
+        const text = parsed.text ?? '';
+        const truncated = text.length > MAX_TEXT_CHARS;
+        const content = truncated
+          ? text.slice(0, MAX_TEXT_CHARS) + '\n... [truncated]'
+          : text;
+        inlineBlocks.push(
+          `### 📕 ${fileName} (PDF, ${parsed.numpages} 页, ${Math.round(a.size / 1024)}KB)\n\`\`\`\n${content}\n\`\`\``,
+        );
+      }
+    } catch (e) {
+      inlineBlocks.push(
+        `### ❌ ${fileName}\n读取失败: ${e instanceof Error ? e.message : String(e)}`,
+      );
+    }
+  }
+
   const attachmentList = (body.attachments ?? [])
-    .map((a) => `  - ${a.url} (${a.mime}, ${Math.round(a.size / 1024)}KB)`)
+    .map((a) => `  - ${a.name ?? a.url} (${a.mime}, ${Math.round(a.size / 1024)}KB) [${a.kind ?? '?'}]`)
     .join('\n');
-  const preamble =
-    body.attachments && body.attachments.length > 0
-      ? `${body.message}\n\n[附件 ${body.attachments.length} 个:]\n${attachmentList}\n(注:agent 当前模型未必能直接看图;如需描述请用户口述)`
-      : body.message;
+
+  let preamble = body.message;
+  if (body.attachments && body.attachments.length > 0) {
+    preamble += `\n\n[附件 ${body.attachments.length} 个:]\n${attachmentList}`;
+    if (inlineBlocks.length > 0) {
+      preamble += `\n\n---\n${inlineBlocks.join('\n\n')}`;
+    }
+    if (hasImages && !supportsVision) {
+      preamble += `\n\n(注:agent 当前模型未必能直接看图;如需描述请用户口述)`;
+    }
+  }
+
   const userContent: string | ContentPart[] =
     hasImages && supportsVision
       ? [

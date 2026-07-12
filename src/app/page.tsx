@@ -21,7 +21,14 @@ import {
 
 // ─── Types ─────────────────────────────────────────────────────────────
 
-type Attachment = { url: string; mime: string; size: number };
+type Attachment = {
+  url: string;
+  mime: string;
+  size: number;
+  name?: string;
+  kind?: 'image' | 'text' | 'pdf' | 'other';
+  ext?: string;
+};
 
 type DisplayMessage = {
   id: string;
@@ -2112,16 +2119,42 @@ function Bubble({ msg, onLightbox }: { msg: DisplayMessage; onLightbox?: (url: s
         <div className="max-w-[85%] rounded-2xl rounded-br-md bg-zinc-100 px-4 py-2 text-[14px] text-zinc-900 dark:bg-zinc-800 dark:text-zinc-100">
           {attachments.length > 0 && (
             <div className="mb-2 flex flex-wrap gap-1.5">
-              {attachments.map((a) => (
-                /* eslint-disable-next-line @next/next/no-img-element */
-                <img
-                  key={a.url}
-                  src={a.url}
-                  alt=""
-                  className="h-32 w-32 cursor-pointer rounded-lg border border-zinc-200 object-cover transition hover:opacity-90 dark:border-zinc-700"
-                  onClick={() => onLightbox?.(a.url)}
-                />
-              ))}
+              {attachments.map((a) =>
+                a.kind === 'image' ? (
+                  /* eslint-disable-next-line @next/next/no-img-element */
+                  <img
+                    key={a.url}
+                    src={a.url}
+                    alt=""
+                    className="h-32 w-32 cursor-pointer rounded-lg border border-zinc-200 object-cover transition hover:opacity-90 dark:border-zinc-700"
+                    onClick={() => onLightbox?.(a.url)}
+                  />
+                ) : (
+                  <a
+                    key={a.url}
+                    href={a.url}
+                    target="_blank"
+                    rel="noreferrer"
+                    className="flex max-w-[200px] items-center gap-1.5 rounded-lg border border-zinc-200 bg-white px-2 py-1.5 text-zinc-700 transition hover:bg-zinc-50 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-200 dark:hover:bg-zinc-800"
+                    title={`${a.name ?? a.url} (${a.ext?.toUpperCase() ?? '?'})`}
+                  >
+                    <span className="text-base leading-none">
+                      {fileIconFor(a.kind, a.ext)}
+                    </span>
+                    <div className="min-w-0 flex-1">
+                      <div className="truncate text-[11px] font-medium">
+                        {a.name ?? a.url.split('/').pop()}
+                      </div>
+                      <div className="text-[9px] opacity-70">
+                        {a.ext?.toUpperCase() ?? '?'} ·{' '}
+                        {a.size < 1024 * 1024
+                          ? `${Math.round(a.size / 1024)}KB`
+                          : `${(a.size / 1024 / 1024).toFixed(1)}MB`}
+                      </div>
+                    </div>
+                  </a>
+                ),
+              )}
             </div>
           )}
           {msg.content && (
@@ -2214,6 +2247,109 @@ function StatusDot({ status }: { status: ToolCallDisplay['status'] }) {
 }
 
 // ─────────────────────────────────────────────────────────────────────
+// Attachment chip — image = thumbnail, text/pdf/other = icon + filename
+// ─────────────────────────────────────────────────────────────────────
+
+function fileIconFor(kind: string | undefined, ext: string | undefined) {
+  if (kind === 'image') return '🖼';
+  if (kind === 'pdf' || ext === 'pdf') return '📕';
+  if (kind === 'text') {
+    if (['md', 'markdown', 'mdx'].includes(ext ?? '')) return '📝';
+    if (['json', 'yml', 'yaml', 'toml', 'xml', 'csv', 'tsv'].includes(ext ?? '')) return '⚙';
+    if (['html', 'htm', 'xml', 'svg', 'css', 'scss'].includes(ext ?? '')) return '🎨';
+    if (['js', 'jsx', 'ts', 'tsx', 'mjs', 'cjs'].includes(ext ?? '')) return '📜';
+    if (['py', 'rb', 'go', 'rs', 'java', 'kt'].includes(ext ?? '')) return '🐍';
+    if (['sh', 'bash', 'zsh', 'ps1'].includes(ext ?? '')) return '🖥';
+    if (['sql', 'graphql', 'gql'].includes(ext ?? '')) return '🗄';
+    return '📄';
+  }
+  return '📎';
+}
+
+function PendingAttachmentChip({
+  a,
+  onRemove,
+  onLightbox,
+}: {
+  a: Attachment;
+  onRemove: () => void;
+  onLightbox: () => void;
+}) {
+  const isImage = a.kind === 'image';
+  const icon = fileIconFor(a.kind, a.ext);
+  const sizeLabel = a.size < 1024
+    ? `${a.size}B`
+    : a.size < 1024 * 1024
+    ? `${Math.round(a.size / 1024)}KB`
+    : `${(a.size / 1024 / 1024).toFixed(1)}MB`;
+  if (isImage) {
+    return (
+      <div
+        className="group relative h-16 w-16 shrink-0 overflow-hidden rounded-lg border border-zinc-200 dark:border-zinc-700"
+        title={`${a.name ?? a.url} (${sizeLabel})`}
+      >
+        {/* eslint-disable-next-line @next/next/no-img-element */}
+        <img
+          src={a.url}
+          alt=""
+          className="h-full w-full cursor-pointer object-cover"
+          onClick={onLightbox}
+        />
+        <button
+          type="button"
+          onClick={onRemove}
+          className="absolute right-0.5 top-0.5 hidden h-4 w-4 items-center justify-center rounded-full bg-black/70 text-[10px] text-white group-hover:flex"
+          aria-label="Remove"
+        >
+          ×
+        </button>
+      </div>
+    );
+  }
+  // Non-image: icon + filename chip (click to download / preview)
+  return (
+    <div
+      className="group relative flex h-16 max-w-[180px] items-center gap-1.5 overflow-hidden rounded-lg border border-zinc-200 bg-zinc-50 px-2 dark:border-zinc-700 dark:bg-zinc-800"
+      title={`${a.name ?? a.url} (${sizeLabel})`}
+    >
+      <span className="text-base leading-none">{icon}</span>
+      <div className="min-w-0 flex-1">
+        <div className="truncate text-[11px] font-medium text-zinc-700 dark:text-zinc-200">
+          {a.name ?? a.url.split('/').pop()}
+        </div>
+        <div className="truncate text-[9px] text-zinc-500 dark:text-zinc-400">
+          {a.ext?.toUpperCase() ?? '?'} · {sizeLabel}
+        </div>
+      </div>
+      <a
+        href={a.url}
+        target="_blank"
+        rel="noreferrer"
+        className="shrink-0 rounded p-0.5 text-zinc-400 hover:bg-zinc-200 hover:text-zinc-700 dark:hover:bg-zinc-700 dark:hover:text-zinc-100"
+        title="Open / download"
+        onClick={(e) => e.stopPropagation()}
+      >
+        <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+          <path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6" />
+          <polyline points="15 3 21 3 21 9" />
+          <line x1="10" y1="14" x2="21" y2="3" />
+        </svg>
+      </a>
+      <button
+        type="button"
+        onClick={onRemove}
+        className="shrink-0 rounded p-0.5 text-zinc-400 hover:bg-zinc-200 hover:text-zinc-700 dark:hover:bg-zinc-700 dark:hover:text-zinc-100"
+        aria-label="Remove"
+      >
+        <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round">
+          <path d="M18 6L6 18M6 6l12 12" />
+        </svg>
+      </button>
+    </div>
+  );
+}
+
+// ─────────────────────────────────────────────────────────────────────
 // Composer — ChatGPT-style: floating pill, centered, more prominent
 // ─────────────────────────────────────────────────────────────────────
 
@@ -2246,24 +2382,19 @@ function Composer({
   const [dragOver, setDragOver] = useState(false);
   const [uploadError, setUploadError] = useState<string | null>(null);
 
-  const MAX_IMAGES = 10;
-  const MAX_BYTES = 5 * 1024 * 1024;
-  const ALLOWED = ['image/png', 'image/jpeg', 'image/jpg', 'image/webp', 'image/gif'];
+  const MAX_FILES = 10;
+  const MAX_BYTES = 10 * 1024 * 1024; // matches server limit
 
   const uploadFiles = async (files: FileList | File[]) => {
     setUploadError(null);
     const arr = Array.from(files);
-    if (pendingAttachments.length + arr.length > MAX_IMAGES) {
-      setUploadError(`最多 ${MAX_IMAGES} 张,当前 ${pendingAttachments.length} 张`);
+    if (pendingAttachments.length + arr.length > MAX_FILES) {
+      setUploadError(`最多 ${MAX_FILES} 个,当前 ${pendingAttachments.length}`);
       return;
     }
     for (const f of arr) {
-      if (!ALLOWED.includes(f.type)) {
-        setUploadError(`不支持 ${f.type}`);
-        return;
-      }
       if (f.size > MAX_BYTES) {
-        setUploadError(`${f.name} 超过 5MB`);
+        setUploadError(`${f.name} 超过 10MB`);
         return;
       }
     }
@@ -2321,33 +2452,19 @@ function Composer({
           {pendingAttachments.length > 0 && (
             <div className="flex flex-wrap gap-2 px-3 pt-3">
               {pendingAttachments.map((a, i) => (
-                <div
+                <PendingAttachmentChip
                   key={a.url}
-                  className="group relative h-16 w-16 shrink-0 overflow-hidden rounded-lg border border-zinc-200 dark:border-zinc-700"
-                >
-                  {/* eslint-disable-next-line @next/next/no-img-element */}
-                  <img
-                    src={a.url}
-                    alt=""
-                    className="h-full w-full object-cover"
-                    onClick={() => onLightbox(a.url)}
-                  />
-                  <button
-                    type="button"
-                    onClick={() =>
-                      setPendingAttachments(
-                        pendingAttachments.filter((_, idx) => idx !== i),
-                      )
-                    }
-                    className="absolute right-0.5 top-0.5 hidden h-4 w-4 items-center justify-center rounded-full bg-black/70 text-[10px] text-white group-hover:flex"
-                    aria-label="Remove"
-                  >
-                    ×
-                  </button>
-                </div>
+                  a={a}
+                  onRemove={() =>
+                    setPendingAttachments(
+                      pendingAttachments.filter((_, idx) => idx !== i),
+                    )
+                  }
+                  onLightbox={() => onLightbox(a.url)}
+                />
               ))}
               <div className="flex h-16 items-center px-1 text-[10px] text-zinc-500">
-                {pendingAttachments.length} / {MAX_IMAGES}
+                {pendingAttachments.length} / {MAX_FILES}
               </div>
             </div>
           )}
@@ -2362,7 +2479,7 @@ function Composer({
             <button
               type="button"
               onClick={() => fileInputRef.current?.click()}
-              disabled={streaming || pendingAttachments.length >= MAX_IMAGES}
+              disabled={streaming || pendingAttachments.length >= MAX_FILES}
               className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full text-zinc-500 transition hover:bg-zinc-100 disabled:opacity-30 dark:text-zinc-400 dark:hover:bg-zinc-800"
               aria-label="Upload images"
               title="上传图片（最多 10 张）"
@@ -2374,7 +2491,7 @@ function Composer({
             <input
               ref={fileInputRef}
               type="file"
-              accept="image/png,image/jpeg,image/jpg,image/webp,image/gif"
+              accept="image/*,.pdf,.txt,.md,.markdown,.json,.csv,.xml,.html,.css,.js,.jsx,.ts,.tsx,.mjs,.cjs,.py,.rb,.go,.rs,.java,.kt,.c,.h,.cpp,.hpp,.cs,.php,.swift,.sh,.bash,.zsh,.ps1,.sql,.graphql,.gql,.yml,.yaml,.toml,.ini,.conf,.cfg,.env,.vue,.svelte,.mdx"
               multiple
               className="hidden"
               onChange={onFilePick}
