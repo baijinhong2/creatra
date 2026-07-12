@@ -360,30 +360,36 @@ async function suggestSimilarCreators(
   }
   const prompt =
     language === 'zh'
-      ? `基于以下账号定位,推荐 10 个相似/对标 X(Twitter)账号。
+      ? `基于以下账号定位,推荐 15-20 个可能的相似/对标 X(Twitter)账号。
 
 账号定位:${accountContext}
 
 要求:
 - 优先推荐真人创作者,不要官方品牌账号
-- 推荐不同量级的账号(几个大 V + 几个成长中的)
-- 给出每个账号的 @handle、一句话简介、为什么值得对标
+- 推荐不同量级的账号(几个大 V + 几个成长中的 + 几个小而新)
+- 给出每个账号的 @handle、一句话简介、为什么值得对标、估算粉丝数级别
+- **诚实**:有些 handle 你可能记不清或不确定,可以列出来但**不要瞎编**。给每条加 "confidence":"high|medium|low" 标记
+  - high: 非常确定这个人在做这个方向
+  - medium: 大概在做这个方向,可能有偏差
+  - low: 名字可能记错或人可能已经改名/不活跃
 - 直接输出 JSON 数组,不要 markdown
 
 格式:
-[{"handle":"@xxx","bio":"一句话简介","why":"为什么对标","followerRange":"1k-10k|10k-100k|100k+"}]`
-      : `Recommend 10 similar/benchmark X (Twitter) accounts based on the following account positioning.
+[{"handle":"@xxx","bio":"一句话简介","why":"为什么对标","followerRange":"1k-10k|10k-100k|100k+","confidence":"high|medium|low"}]`
+      : `Recommend 15-20 candidate similar/benchmark X (Twitter) accounts based on the following account positioning.
 
 Positioning: ${accountContext}
 
 Requirements:
 - Prioritize real creators, not official brand accounts
-- Mix follower sizes (a few big accounts + several growing ones)
+- Mix follower sizes (a few big + several growing + a few small/new)
 - For each: @handle, one-line bio, why they're a good benchmark, follower range
+- **Be honest**: if you're not sure about a handle or the person may have rebranded/gone inactive, include it but tag confidence as "low". Do NOT fabricate handles.
+- Mark each with "confidence":"high|medium|low"
 - Output raw JSON array, no markdown
 
 Format:
-[{"handle":"@xxx","bio":"one-line bio","why":"why benchmark","followerRange":"1k-10k|10k-100k|100k+"}]`;
+[{"handle":"@xxx","bio":"one-line bio","why":"why benchmark","followerRange":"1k-10k|10k-100k|100k+","confidence":"high|medium|low"}]`;
 
   try {
     const r = await deepseek.chat.completions.create({
@@ -392,13 +398,13 @@ Format:
         {
           role: 'system',
           content:
-            'You are a research assistant that recommends X (Twitter) accounts. Output strictly valid JSON only — no markdown fences, no explanations.',
+            'You are a research assistant that recommends X (Twitter) accounts. Output strictly valid JSON only — no markdown fences, no explanations. Return a JSON object with a "creators" array of 15-20 entries.',
         },
         { role: 'user', content: prompt },
       ],
       response_format: { type: 'json_object' },
       temperature: 0.7,
-      max_tokens: 1500,
+      max_tokens: 3000,
     });
     const content = (r as any).choices?.[0]?.message?.content;
     if (!content) return { ok: false, error: 'Empty LLM response' };
@@ -406,7 +412,7 @@ Format:
       const parsed = JSON.parse(content);
       const list = Array.isArray(parsed)
         ? parsed
-        : (parsed.suggestions ?? parsed.creators ?? []);
+        : (parsed.creators ?? parsed.suggestions ?? parsed.accounts ?? []);
       return { ok: true, data: list };
     } catch {
       return { ok: false, error: 'Invalid JSON from LLM' };
@@ -848,7 +854,7 @@ export const TOOL_DEFINITIONS: ToolDefinition[] = [
   {
     name: 'suggest_similar_creators',
     description:
-      "Given the user's account positioning, recommend 10 similar / benchmark X creators. Use when the user is unsure who to track.",
+      "Given the user's account positioning, recommend 15-20 candidate similar / benchmark X creators as raw leads. Each comes with a confidence level (high/medium/low) reflecting how sure the LLM is. The LLM may fabricate or misremember handles, so the agent SHOULD verify each candidate afterwards via `web_search(\"@handle niche twitter\")` (cheap, works without X cookies) and `twitter_get_user_tweets(handle, count=3)` (real bio + recent activity, requires X cookies) before showing the final list. Filter out low-confidence or unverified candidates, then output the top 10 verified ones with real bio / follower count / latest tweet.",
     parameters: {
       type: 'object',
       properties: {
