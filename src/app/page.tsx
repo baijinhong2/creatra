@@ -66,7 +66,9 @@ type AgentEvent =
 
 const CONV_KEY = 'vp_conversation_id';
 
-// 8 skill entry points (1:1 with the system prompt's skill catalog).
+// 9 skill entry points (1:1 with the system prompt's skill catalog)
+// + 2 general-purpose "tools" (web search / image search).
+// Order: skills 1-9, then 2 general.
 const SUGGESTED_PROMPT_KEYS: { title: DictKey; body: DictKey }[] = [
   { title: 'prompt.positioning.title', body: 'prompt.positioning.body' },
   { title: 'prompt.brand.title', body: 'prompt.brand.body' },
@@ -76,6 +78,9 @@ const SUGGESTED_PROMPT_KEYS: { title: DictKey; body: DictKey }[] = [
   { title: 'prompt.replies.title', body: 'prompt.replies.body' },
   { title: 'prompt.engage.title', body: 'prompt.engage.body' },
   { title: 'prompt.analytics.title', body: 'prompt.analytics.body' },
+  { title: 'prompt.insights.title', body: 'prompt.insights.body' },
+  { title: 'prompt.searchNews.title', body: 'prompt.searchNews.body' },
+  { title: 'prompt.findImage.title', body: 'prompt.findImage.body' },
 ];
 
 // ─────────────────────────────────────────────────────────────────────
@@ -2010,12 +2015,10 @@ function EmptyState({
         {lang === 'zh' ? '你好,我是 viralpost' : "Hi, I'm viralpost"}
       </h1>
       <p className="mt-2 text-[14px] text-zinc-500 dark:text-zinc-400">
-        {lang === 'zh'
-          ? '你的 X 运营合伙人 · 8 件事都能干'
-          : 'Your X ops partner · 8 capabilities'}
+        {t(lang, 'empty.tagline')}
       </p>
 
-      <div className="mt-10 grid w-full max-w-3xl grid-cols-1 gap-2.5 sm:grid-cols-2 lg:grid-cols-4">
+      <div className="mt-10 grid w-full max-w-4xl grid-cols-1 gap-2.5 sm:grid-cols-2 lg:grid-cols-4">
         {SUGGESTED_PROMPT_KEYS.map((p) => (
           <button
             key={p.title}

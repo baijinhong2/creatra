@@ -48,9 +48,10 @@ const dict = {
   // ── Empty state ──────────────────────────────────────────
   'empty.greeting': { zh: '你好 — 我是你的 X 运营合伙人。', en: "Hi — I'm your X ops partner." },
   'empty.body': {
-    zh: '我专门做 X 账号运营,8 件事都能干:定位挖掘 · 用户名/bio · 对标博主 · 内容策略 · 每日推文 · 评论回复 · 竞品互动 · 数据分析。挑一个起点,或者直接说要啥。',
-    en: 'I run X accounts end-to-end. 8 capabilities: positioning · username/bio · similar creators · content strategy · daily tweets · comment replies · competitor engagement · analytics. Pick a starter or just say what you need.',
+    zh: '我专门做 X 账号运营,9 项核心能力 + 2 个通用工具:定位挖掘 · 用户名/bio · 对标博主 · 内容策略 · 每日推文 · 评论回复 · 竞品互动 · 数据分析 · 沉淀梳理;外加搜全网热点、找推文配图。挑一个起点,或者直接说要啥。',
+    en: 'I run X accounts end-to-end. 9 core skills + 2 general tools: positioning · username/bio · similar creators · content strategy · daily tweets · comment replies · competitor engagement · analytics · reflection capture; plus web search for trends and image search for tweets. Pick a starter or just say what you need.',
   },
+  'empty.tagline': { zh: '你的 X 运营合伙人 · 9 项能力 + 2 个通用工具', en: 'Your X ops partner · 9 skills + 2 tools' },
   'empty.skillsHint': {
     zh: '所有能力 →',
     en: 'All skills →',
@@ -74,6 +75,21 @@ const dict = {
   'prompt.engage.body': { zh: '看 @xxx 最近发了啥,挑值得我评论的去互动,给我直接能发的评论。', en: "Look at @xxx's recent tweets. Pick the ones worth engaging with and draft a publishable comment for each." },
   'prompt.analytics.title': { zh: '我的数据', en: 'My analytics' },
   'prompt.analytics.body': { zh: '看我最近 20 条推文表现,哪些火、哪些没火、下周该调整啥。', en: 'Look at my last 20 tweets — which worked, which didnt, what to change next week.' },
+  'prompt.insights.title': { zh: '沉淀 / 反思', en: 'Capture insight' },
+  'prompt.insights.body': {
+    zh: '我做了个项目 / 我有个想法,你帮我反推+引导+归纳,沉淀成结构化内容,以后写推文能用上。',
+    en: 'I just did a project / have a thought. Help me draw it out, structure it, and save it for future tweets.',
+  },
+  'prompt.searchNews.title': { zh: '搜全网热点', en: 'Search trends' },
+  'prompt.searchNews.body': {
+    zh: '帮我搜一下最近 [赛道] 的新闻/热点/趋势,要带链接和发布时间。',
+    en: 'Search the web for recent news/trends in [niche] — include URLs and dates.',
+  },
+  'prompt.findImage.title': { zh: '找推文配图', en: 'Find tweet image' },
+  'prompt.findImage.body': {
+    zh: '我要发一条关于 [主题] 的推文,帮我找 3-6 张可用的配图(老照片 / 截图 / 通用 stock),带 URL。',
+    en: "I'm posting a tweet about [topic]. Find 3-6 usable hero images (stock / screenshots / open-web) with URLs.",
+  },
 
   // User menu popover
   'menu.theme': { zh: '外观', en: 'Theme' },
