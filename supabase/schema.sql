@@ -34,6 +34,10 @@ create table if not exists public.vp_conversations (
   id uuid primary key default gen_random_uuid(),
   user_id uuid references public.vp_users(id) on delete cascade,
   title text not null default 'New chat',
+  -- v0.5: per-conversation interaction mode.
+  -- `auto` = agent picks per turn; `expert`/`assistant` = user-picked, sticky.
+  mode text not null default 'auto'
+    check (mode in ('auto', 'expert', 'assistant')),
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now()
 );

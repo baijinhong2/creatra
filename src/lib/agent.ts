@@ -13,12 +13,13 @@
 import type { ChatMessage, ContentPart, ToolCall } from './llm';
 import { chatStream } from './llm';
 import { TOOL_DEFINITIONS, runTool, type ToolName } from './tools';
-import { AGENT_SYSTEM_PROMPT } from './prompts';
+import { buildSystemPrompt, type ConvMode } from './prompts';
 
 export type AgentEvent =
   | { type: 'message_start' }
   | { type: 'message_delta'; content: string }
   | { type: 'message_end'; content: string }
+  | { type: 'mode_decided'; mode: 'expert' | 'assistant' } // auto mode: agent's per-turn decision
   | {
       type: 'tool_start';
       toolCallId: string;
@@ -37,6 +38,40 @@ export type AgentEvent =
   | { type: 'done' };
 
 const MAX_ITERATIONS = 8;
+
+/**
+ * Auto-mode tag parser.
+ *
+ * In `auto` mode, the agent's system prompt tells it to emit
+ * `<mode>expert</mode>` or `<mode>assistant</mode>` at the start of
+ * its response. The UI shows the chosen mode as a badge.
+ *
+ * We strip the tag from what the user sees (so it doesn't appear in
+ * the chat) and emit a `mode_decided` event so the front-end can
+ * update its mode indicator.
+ *
+ * Strategy: buffer the first ~40 chars. If the tag is found, peel
+ * it off (and any leading whitespace/newline) and yield a
+ * `mode_decided` event before streaming the rest. If no tag appears
+ * within the buffer window, flush everything as-is (the agent
+ * didn't follow the convention — degrade gracefully).
+ */
+const AUTO_TAG_RE = /^\s*<mode>(expert|assistant)<\/mode>\s*/i;
+const AUTO_TAG_BUFFER_LIMIT = 40; // generous, tag itself is ~25 chars
+
+function tryStripAutoTag(
+  soFar: string,
+): { tag: 'expert' | 'assistant' | null; stripped: string; consumed: number } {
+  const m = soFar.slice(0, AUTO_TAG_BUFFER_LIMIT).match(AUTO_TAG_RE);
+  if (m) {
+    return {
+      tag: m[1].toLowerCase() as 'expert' | 'assistant',
+      stripped: soFar.slice(m[0].length),
+      consumed: m[0].length,
+    };
+  }
+  return { tag: null, stripped: soFar, consumed: 0 };
+}
 
 type StreamChunk = {
   choices?: Array<{
@@ -86,6 +121,11 @@ async function* streamOneTurn(
     { id: string; name: string; args: string }
   >();
   let startedMessage = false;
+  // Auto-mode tag detection state. `null` means the tag has been found
+  // (or the response doesn't start with one); `number` is the length of
+  // the leading buffer we're still examining.
+  let autoTagBuffer: number | null = AUTO_TAG_BUFFER_LIMIT;
+  let pendingDecided: 'expert' | 'assistant' | null = null;
 
   for await (const chunk of stream) {
     const delta = chunk.choices?.[0]?.delta;
@@ -97,7 +137,40 @@ async function* streamOneTurn(
         yield { type: 'message_start' };
       }
       accumulatedContent += delta.content;
-      yield { type: 'message_delta', content: delta.content };
+
+      // Auto-mode tag stripping. We buffer the first AUTO_TAG_BUFFER_LIMIT
+      // chars of content; once a tag is identified, we emit
+      // `mode_decided` and skip the tag chars in the streamed deltas.
+      if (autoTagBuffer !== null) {
+        const head = accumulatedContent.slice(0, AUTO_TAG_BUFFER_LIMIT);
+        const m = head.match(AUTO_TAG_RE);
+        if (m) {
+          // Tag found. Emit mode_decided once and trim tag from accumulated.
+          pendingDecided = m[1].toLowerCase() as 'expert' | 'assistant';
+          yield { type: 'mode_decided', mode: pendingDecided };
+          const after = accumulatedContent.slice(m[0].length);
+          // Stream everything *after* the tag (skip the tag itself).
+          if (after.length > 0) {
+            yield { type: 'message_delta', content: after };
+          }
+          accumulatedContent = after;
+          autoTagBuffer = null;
+        } else if (head.length >= AUTO_TAG_BUFFER_LIMIT) {
+          // Buffer full, no tag — flush whatever we have.
+          yield { type: 'message_delta', content: head };
+          accumulatedContent = accumulatedContent.slice(AUTO_TAG_BUFFER_LIMIT);
+          autoTagBuffer = null;
+        } else if (!/^[\s<]/.test(head)) {
+          // First non-whitespace, non-'<' char and it's not a tag opener —
+          // give up early and flush.
+          yield { type: 'message_delta', content: head };
+          accumulatedContent = accumulatedContent.slice(head.length);
+          autoTagBuffer = null;
+        }
+        // else: still buffering, don't yield yet
+      } else {
+        yield { type: 'message_delta', content: delta.content };
+      }
     }
 
     if (delta.tool_calls) {
@@ -119,6 +192,12 @@ async function* streamOneTurn(
     }
   }
 
+  // Flush any leftover buffer (e.g. model only produced 5 chars and stopped).
+  if (autoTagBuffer !== null && accumulatedContent.length > 0) {
+    yield { type: 'message_delta', content: accumulatedContent };
+    accumulatedContent = '';
+  }
+
   const toolCalls: ToolCall[] = Array.from(tcByIndex.values()).map((tc) => ({
     id: tc.id,
     type: 'function',
@@ -134,9 +213,10 @@ export async function* runAgent(
   userId: string,
   conversationId?: string,
   model: string = 'deepseek-v4-flash',
+  mode: ConvMode = 'auto',
 ): AsyncGenerator<AgentEvent> {
   const messages: ChatMessage[] = [
-    { role: 'system', content: AGENT_SYSTEM_PROMPT },
+    { role: 'system', content: buildSystemPrompt({ mode }) },
     ...history,
     { role: 'user', content: userMessage },
   ];

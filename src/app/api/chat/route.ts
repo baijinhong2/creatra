@@ -39,6 +39,7 @@ type RequestBody = {
   conversationId?: string;
   model?: string;
   attachments?: Attachment[];
+  mode?: 'auto' | 'expert' | 'assistant';
 };
 
 function titleFromMessage(text: string): string {
@@ -51,6 +52,7 @@ async function ensureConversation(
   userId: string,
   conversationId: string | undefined,
   firstMessage: string,
+  requestedMode: 'auto' | 'expert' | 'assistant' = 'auto',
 ): Promise<string | null> {
   const db = getDb();
   if (!db) return null;
@@ -62,10 +64,27 @@ async function ensureConversation(
     if (existing.rows[0]?.id) return existing.rows[0].id;
   }
   const inserted = await db.query<{ id: string }>(
-    `INSERT INTO ${TABLE.conversations} (user_id, title) VALUES ($1, $2) RETURNING id`,
-    [userId, titleFromMessage(firstMessage)],
+    `INSERT INTO ${TABLE.conversations} (user_id, title, mode) VALUES ($1, $2, $3) RETURNING id`,
+    [userId, titleFromMessage(firstMessage), requestedMode],
   );
   return inserted.rows[0]?.id ?? null;
+}
+
+async function getConversationMode(
+  userId: string,
+  conversationId: string,
+): Promise<'auto' | 'expert' | 'assistant' | null> {
+  const db = getDb();
+  if (!db) return null;
+  try {
+    const r = await db.query<{ mode: 'auto' | 'expert' | 'assistant' }>(
+      `SELECT mode FROM ${TABLE.conversations} WHERE id = $1 AND user_id = $2`,
+      [conversationId, userId],
+    );
+    return r.rows[0]?.mode ?? null;
+  } catch {
+    return null;
+  }
 }
 
 async function persistMessage(
@@ -114,6 +133,7 @@ export async function POST(request: NextRequest) {
     user.id,
     body.conversationId,
     body.message,
+    body.mode,
   );
   if (conversationId) {
     // Persist the user message text + attachment metadata in `metadata`
@@ -123,6 +143,13 @@ export async function POST(request: NextRequest) {
       meta.attachments = body.attachments;
     }
     await persistMessage(conversationId, user.id, 'user', body.message, meta);
+  }
+
+  // Resolve the conversation mode: client-supplied > DB row > 'auto'.
+  let activeMode: 'auto' | 'expert' | 'assistant' = body.mode ?? 'auto';
+  if (body.conversationId) {
+    const fromDb = await getConversationMode(user.id, body.conversationId);
+    if (fromDb) activeMode = fromDb;
   }
 
   // Build the user-message content for the LLM. We always include a text
@@ -233,6 +260,7 @@ export async function POST(request: NextRequest) {
           user.id,
           conversationId ?? undefined,
           body.model,
+          activeMode,
         )) {
           enqueue(event);
           if (

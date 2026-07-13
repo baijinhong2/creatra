@@ -18,6 +18,7 @@ export const DEFAULT_THEME: Theme = 'light';
 
 export const LANG_STORAGE_KEY = 'vp_lang';
 export const THEME_STORAGE_KEY = 'vp_theme';
+export const TOOL_TRACE_STORAGE_KEY = 'vp_show_tool_trace';
 
 const dict = {
   // ── App identity ──────────────────────────────────────────
@@ -37,6 +38,15 @@ const dict = {
   'sidebar.refresh': { zh: '刷新', en: 'Refresh' },
   'sidebar.emptyChats': { zh: '还没有对话 — 点上面开一个', en: 'No chats yet — start one ↑' },
   'sidebar.sources': { zh: '数据源', en: 'Sources' },
+  'mode.label': { zh: '交互模式', en: 'Mode' },
+  'mode.auto.label': { zh: '自动', en: 'Auto' },
+  'mode.auto.desc': { zh: 'agent 根据话题自动切换专家/助手', en: 'Agent picks expert or assistant per turn' },
+  'mode.expert.label': { zh: '专家', en: 'Expert' },
+  'mode.expert.desc': { zh: '耐心导师,带选项引导,解释"为什么"', en: 'Patient mentor — guides with options, explains the why' },
+  'mode.assistant.label': { zh: '助手', en: 'Assistant' },
+  'mode.assistant.desc': { zh: '高效执行,直接给成品,不铺垫', en: 'Efficient executor — gives you the deliverable' },
+  'mode.decided.expert': { zh: '本轮:专家', en: 'this turn: expert' },
+  'mode.decided.assistant': { zh: '本轮:助手', en: 'this turn: assistant' },
   'sidebar.lang.label': { zh: '界面语言', en: 'Interface language' },
   'sidebar.lang.zh': { zh: '中文', en: 'Chinese' },
   'sidebar.lang.en': { zh: '英文', en: 'English' },
@@ -95,6 +105,9 @@ const dict = {
   'menu.theme': { zh: '外观', en: 'Theme' },
   'menu.theme.light': { zh: '明亮', en: 'Light' },
   'menu.theme.dark': { zh: '暗色', en: 'Dark' },
+  'menu.display': { zh: '显示', en: 'Display' },
+  'menu.showToolTrace': { zh: '显示工具调用', en: 'Show tool calls' },
+  'menu.showToolTrace.hint': { zh: '关掉只看 agent 的最终回复;开起来可以看到 remember_preference / web_search 等工具的调用过程(调试用)', en: 'Off = only see the agent\'s final reply. On = also see tool calls (debug only).' },
   'menu.language': { zh: '语言', en: 'Language' },
   'menu.logout': { zh: '登出', en: 'Log out' },
   'menu.settings': { zh: '设置', en: 'Settings' },
@@ -120,8 +133,6 @@ const dict = {
   // ── Sources panel ────────────────────────────────────────
   'source.github.label': { zh: 'GitHub token', en: 'GitHub token' },
   'source.github.hint': { zh: '给 github_read 用。可选 —— 不填 60 次/小时,填了 5000/小时。', en: 'Used by github_read. Optional — without it you get 60 req/hour.' },
-  'source.tavily.label': { zh: 'Tavily API key', en: 'Tavily API key' },
-  'source.tavily.hint': { zh: '给 web_search 用。在 tavily.com 申请。', en: 'Used by web_search. Get one at tavily.com.' },
   'source.xAuth.label': { zh: 'X (Twitter) auth_token', en: 'X (Twitter) auth_token' },
   'source.xAuth.hint': { zh: '给 twitter_* 用。从浏览器 devtools 拿。', en: 'Used by twitter_search / twitter_get_user_tweets. From browser devtools.' },
   'source.xCt0.label': { zh: 'X (Twitter) ct0', en: 'X (Twitter) ct0' },

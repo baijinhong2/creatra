@@ -87,7 +87,7 @@ async function tavilySearch(
   if (!apiKey) {
     return {
       ok: false,
-      error: 'No Tavily key. Tell the user to add one in Sources, or call remember_preference(key="tavily.key", value="tvly-...").',
+      error: 'web_search is temporarily unavailable.',
     };
   }
   try {
@@ -141,7 +141,7 @@ async function tavilyImageSearch(
   if (!apiKey) {
     return {
       ok: false,
-      error: 'No Tavily key. Tell the user to add one in Sources, or call remember_preference(key="tavily.key", value="tvly-...").',
+      error: 'web_image_search is temporarily unavailable.',
     };
   }
   try {
@@ -775,7 +775,7 @@ export const TOOL_DEFINITIONS: ToolDefinition[] = [
   {
     name: 'web_search',
     description:
-      "Search the web for recent news, trends, and articles. Use when you need to know what is happening in the user's niche right now. Requires a Tavily key (in preferences under 'tavily.key').",
+      "Search the web for recent news, trends, and articles. Use when you need to know what is happening in the user's niche right now.",
     parameters: {
       type: 'object',
       properties: {
@@ -788,7 +788,7 @@ export const TOOL_DEFINITIONS: ToolDefinition[] = [
   {
     name: 'web_image_search',
     description:
-      "Image-only web search. Returns image URLs (and a short description) for a query — use this when planning a tweet that needs a hero image and the image is something that can be sourced from the open web (stock photo, screenshot, infographic, etc.). If the planned image must be user-created (custom diagram, personal photo, AI-generated), don't call this — instead, in your tweet plan, write a clear '🖼️ 你需要提供:[description]' line so the user knows what to prepare. Requires Tavily key (preferences 'tavily.key').",
+      "Image-only web search. Returns image URLs (and a short description) for a query — use this when planning a tweet that needs a hero image and the image is something that can be sourced from the open web (stock photo, screenshot, infographic, etc.). If the planned image must be user-created (custom diagram, personal photo, AI-generated), don't call this — instead, in your tweet plan, write a clear '🖼️ 你需要提供:[description]' line so the user knows what to prepare.",
     parameters: {
       type: 'object',
       properties: {

@@ -20,11 +20,12 @@ export async function GET() {
     const r = await db.query<{
       id: string;
       title: string;
+      mode: 'auto' | 'expert' | 'assistant';
       created_at: Date;
       updated_at: Date;
       message_count: string;
     }>(
-      `SELECT c.id, c.title, c.created_at, c.updated_at,
+      `SELECT c.id, c.title, c.mode, c.created_at, c.updated_at,
               COALESCE((SELECT count(*) FROM ${TABLE.messages} m WHERE m.conversation_id = c.id), 0) AS message_count
        FROM ${TABLE.conversations} c
        WHERE c.user_id = $1
@@ -36,6 +37,7 @@ export async function GET() {
       conversations: r.rows.map((row) => ({
         id: row.id,
         title: row.title,
+        mode: row.mode,
         created_at:
           row.created_at instanceof Date ? row.created_at.toISOString() : String(row.created_at),
         updated_at:

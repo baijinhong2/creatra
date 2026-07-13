@@ -38,10 +38,11 @@ export async function GET(
     const convRes = await db.query<{
       id: string;
       title: string;
+      mode: 'auto' | 'expert' | 'assistant';
       created_at: Date;
       updated_at: Date;
     }>(
-      `SELECT id, title, created_at, updated_at FROM ${TABLE.conversations}
+      `SELECT id, title, mode, created_at, updated_at FROM ${TABLE.conversations}
        WHERE id = $1 AND user_id = $2`,
       [id, user.id],
     );
@@ -65,6 +66,7 @@ export async function GET(
       conversation: {
         id: conv.id,
         title: conv.title,
+        mode: conv.mode,
         created_at: conv.created_at.toISOString(),
         updated_at: conv.updated_at.toISOString(),
       },

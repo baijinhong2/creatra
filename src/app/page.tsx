@@ -7,6 +7,7 @@ import {
   DEFAULT_THEME,
   LANG_STORAGE_KEY,
   THEME_STORAGE_KEY,
+  TOOL_TRACE_STORAGE_KEY,
   type Lang,
   type Theme,
   type DictKey,
@@ -18,6 +19,9 @@ import {
   type ModelId,
   getModel,
 } from '@/lib/models';
+import ReactMarkdown from 'react-markdown';
+import remarkGfm from 'remark-gfm';
+import remarkBreaks from 'remark-breaks';
 
 // ─── Types ─────────────────────────────────────────────────────────────
 
@@ -35,6 +39,7 @@ type DisplayMessage = {
   role: 'user' | 'assistant';
   content: string;
   attachments?: Attachment[];
+  createdAt?: number; // epoch ms — used for the per-message timestamp footer
 };
 
 type ToolCallDisplay = {
@@ -54,6 +59,7 @@ type AgentEvent =
   | { type: 'message_start' }
   | { type: 'message_delta'; content: string }
   | { type: 'message_end'; content: string }
+  | { type: 'mode_decided'; mode: 'expert' | 'assistant' }
   | {
       type: 'tool_start';
       toolCallId: string;
@@ -97,6 +103,7 @@ const SUGGESTED_PROMPT_KEYS: { title: DictKey; body: DictKey }[] = [
 type ConversationSummary = {
   id: string;
   title: string;
+  mode: 'auto' | 'expert' | 'assistant';
   created_at: string;
   updated_at: string;
   message_count: number;
@@ -128,12 +135,6 @@ const SOURCES: Source[] = [
     label: 'source.github.label',
     placeholder: 'ghp_xxx or gho_xxx',
     hint: 'source.github.hint',
-  },
-  {
-    prefKey: 'tavily.key',
-    label: 'source.tavily.label',
-    placeholder: 'tvly-xxx',
-    hint: 'source.tavily.hint',
   },
   {
     prefKey: 'x.auth_token',
@@ -175,6 +176,8 @@ function Sidebar({
   currentUser,
   onLogout,
   narrow,
+  showToolTrace,
+  setShowToolTrace,
 }: {
   lang: Lang;
   setLang: (l: Lang) => void;
@@ -188,6 +191,8 @@ function Sidebar({
   currentUser: { id: string; email: string; display_name: string | null } | null;
   onLogout: () => void;
   narrow: boolean;
+  showToolTrace: boolean;
+  setShowToolTrace: (v: boolean) => void;
 }) {
   const [openPanel, setOpenPanel] = useState<null | 'sources' | 'insights' | 'memories'>(null);
 
@@ -327,6 +332,8 @@ function Sidebar({
             setLang={setLang}
             theme={theme}
             setTheme={setTheme}
+            showToolTrace={showToolTrace}
+            setShowToolTrace={setShowToolTrace}
             onLogout={onLogout}
           />
         </div>
@@ -341,6 +348,8 @@ function Sidebar({
             setLang={setLang}
             theme={theme}
             setTheme={setTheme}
+            showToolTrace={showToolTrace}
+            setShowToolTrace={setShowToolTrace}
             onLogout={onLogout}
             compact
           />
@@ -1139,6 +1148,8 @@ function UserMenu({
   setLang,
   theme,
   setTheme,
+  showToolTrace,
+  setShowToolTrace,
   onLogout,
   compact,
 }: {
@@ -1147,6 +1158,8 @@ function UserMenu({
   setLang: (l: Lang) => void;
   theme: Theme;
   setTheme: (t: Theme) => void;
+  showToolTrace: boolean;
+  setShowToolTrace: (v: boolean) => void;
   onLogout: () => void;
   compact?: boolean;
 }) {
@@ -1338,6 +1351,53 @@ function UserMenu({
             </div>
           </div>
 
+          <div style={{ borderBottom: `1px solid ${dropdownDivider}`, padding: '8px 10px' }}>
+            <div style={{ padding: '0 0 4px', fontSize: '10px', fontWeight: 500, textTransform: 'uppercase', letterSpacing: '0.04em', color: dropdownMuted }}>
+              {t(lang, 'menu.display')}
+            </div>
+            <label
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'space-between',
+                gap: '8px',
+                padding: '4px 0',
+                cursor: 'pointer',
+              }}
+              title={t(lang, 'menu.showToolTrace.hint')}
+            >
+              <span style={{ fontSize: '11px', color: dropdownText }}>{t(lang, 'menu.showToolTrace')}</span>
+              <span
+                onClick={(e) => { e.preventDefault(); setShowToolTrace(!showToolTrace); }}
+                role="switch"
+                aria-checked={showToolTrace}
+                style={{
+                  position: 'relative',
+                  width: '32px',
+                  height: '18px',
+                  borderRadius: '9px',
+                  backgroundColor: showToolTrace ? '#8b5cf6' : dropdownMuted,
+                  transition: 'background-color 150ms',
+                  cursor: 'pointer',
+                  flexShrink: 0,
+                }}
+              >
+                <span
+                  style={{
+                    position: 'absolute',
+                    top: '2px',
+                    left: showToolTrace ? '16px' : '2px',
+                    width: '14px',
+                    height: '14px',
+                    borderRadius: '50%',
+                    backgroundColor: '#fff',
+                    transition: 'left 150ms',
+                  }}
+                />
+              </span>
+            </label>
+          </div>
+
           <button
             onClick={() => {
               setOpen(false);
@@ -1457,6 +1517,96 @@ function ModelPicker({
 // Main page
 // ─────────────────────────────────────────────────────────────────────
 
+type ConvMode = 'auto' | 'expert' | 'assistant';
+
+function ModePicker({
+  mode,
+  onChange,
+  disabled,
+  lang,
+}: {
+  mode: ConvMode;
+  onChange: (m: ConvMode) => void;
+  disabled?: boolean;
+  lang: Lang;
+}) {
+  const [open, setOpen] = useState(false);
+  const ref = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (!open) return;
+    const onClick = (e: MouseEvent) => {
+      if (ref.current && !ref.current.contains(e.target as Node)) {
+        setOpen(false);
+      }
+    };
+    document.addEventListener('mousedown', onClick);
+    return () => document.removeEventListener('mousedown', onClick);
+  }, [open]);
+
+  const options: { id: ConvMode; label: DictKey; desc: DictKey; dot: string }[] = [
+    { id: 'auto', label: 'mode.auto.label', desc: 'mode.auto.desc', dot: 'bg-zinc-400' },
+    { id: 'expert', label: 'mode.expert.label', desc: 'mode.expert.desc', dot: 'bg-violet-500' },
+    { id: 'assistant', label: 'mode.assistant.label', desc: 'mode.assistant.desc', dot: 'bg-emerald-500' },
+  ];
+  const current = options.find((o) => o.id === mode) ?? options[0];
+
+  return (
+    <div ref={ref} className="relative">
+      <button
+        type="button"
+        onClick={() => !disabled && setOpen((v) => !v)}
+        disabled={disabled}
+        className="flex items-center gap-1.5 rounded-full px-2.5 py-0.5 text-[12px] font-medium text-zinc-700 hover:bg-zinc-100 disabled:cursor-not-allowed disabled:opacity-50 dark:text-zinc-300 dark:hover:bg-zinc-800/60"
+        aria-label={t(lang, 'mode.label')}
+        aria-expanded={open}
+      >
+        <span className={`h-1.5 w-1.5 rounded-full ${current.dot}`} />
+        <span>{t(lang, current.label)}</span>
+        <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+          <path d="M6 9l6 6 6-6" />
+        </svg>
+      </button>
+      {open && (
+        <div className="absolute right-0 top-full z-30 mt-2 w-[280px] overflow-hidden rounded-xl border border-zinc-200 bg-white shadow-lg dark:border-zinc-800 dark:bg-zinc-900">
+          <div className="px-3 py-2 text-[11px] font-semibold uppercase tracking-wide text-zinc-500 dark:text-zinc-400">
+            {t(lang, 'mode.label')}
+          </div>
+          {options.map((o) => {
+            const active = o.id === mode;
+            return (
+              <button
+                key={o.id}
+                type="button"
+                onClick={() => {
+                  onChange(o.id);
+                  setOpen(false);
+                }}
+                className="flex w-full items-start gap-3 px-3 py-2.5 text-left hover:bg-zinc-50 dark:hover:bg-zinc-800/60"
+              >
+                <div className={`mt-1.5 h-2 w-2 shrink-0 rounded-full ${o.dot}`} />
+                <div className="min-w-0 flex-1">
+                  <div className="flex items-center gap-2">
+                    <span className="text-[13px] font-medium text-zinc-900 dark:text-zinc-100">
+                      {t(lang, o.label)}
+                    </span>
+                    {active && (
+                      <span className="text-[10px] text-emerald-600 dark:text-emerald-400">✓</span>
+                    )}
+                  </div>
+                  <div className="mt-0.5 text-[11px] text-zinc-500 dark:text-zinc-400">
+                    {t(lang, o.desc)}
+                  </div>
+                </div>
+              </button>
+            );
+          })}
+        </div>
+      )}
+    </div>
+  );
+}
+
 export default function Home() {
   const [messages, setMessages] = useState<DisplayMessage[]>([]);
   const [input, setInput] = useState('');
@@ -1490,6 +1640,18 @@ export default function Home() {
     }
   }, []);
 
+  // Show tool call trace in the chat (debug-style cards). Default OFF — the
+  // target users (non-technical content operators) care about results, not
+  // process. The agent's natural reply already conveys "已存 / 已查" via the
+  // `💾 / ✅` convention. Turn ON only for debugging.
+  const [showToolTrace, setShowToolTraceState] = useState(false);
+  const setShowToolTrace = useCallback((v: boolean) => {
+    setShowToolTraceState(v);
+    if (typeof window !== 'undefined') {
+      window.localStorage.setItem(TOOL_TRACE_STORAGE_KEY, v ? '1' : '0');
+    }
+  }, []);
+
   // Selected LLM model. Persisted to localStorage; defaults to flash.
   const [model, setModelState] = useState<ModelId>(DEFAULT_MODEL);
   const setModel = useCallback((m: ModelId) => {
@@ -1498,6 +1660,12 @@ export default function Home() {
       window.localStorage.setItem(MODEL_STORAGE_KEY, m);
     }
   }, []);
+
+  // Conversation mode (auto/expert/assistant). Per-conversation, default 'auto'.
+  const [mode, setModeState] = useState<ConvMode>('auto');
+  // Per-turn mode decision when in auto mode. Set by `mode_decided` SSE event
+  // and shown as a small badge next to the user message. Resets on new turn.
+  const [lastDecidedMode, setLastDecidedMode] = useState<'expert' | 'assistant' | null>(null);
 
   // Sidebar collapses from 260px to 60px (icon rail). Never unmounts.
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
@@ -1536,6 +1704,13 @@ export default function Home() {
     }
   }, []);
 
+  // Re-hydrate tool-trace preference (default OFF).
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    const saved = window.localStorage.getItem(TOOL_TRACE_STORAGE_KEY);
+    if (saved === '1') setShowToolTrace(true);
+  }, []);
+
   const refreshConversations = useCallback(async () => {
     try {
       const r = await fetch('/api/conversations', { cache: 'no-store' });
@@ -1556,6 +1731,7 @@ export default function Home() {
     setToolCalls([]);
     setStreamingText('');
     setStatus('idle');
+    setLastDecidedMode(null);
 
     try {
       const r = await fetch(`/api/conversations/${id}/messages`, {
@@ -1566,13 +1742,21 @@ export default function Home() {
         return;
       }
       const data = (await r.json()) as {
+        conversation?: { mode?: ConvMode };
         messages?: Array<{
           id: string;
           role: 'user' | 'assistant';
           content: string | null;
           metadata?: { attachments?: Attachment[] };
+          created_at?: string;
         }>;
       };
+      // Sync the conversation's mode into local state.
+      if (data.conversation?.mode) {
+        setModeState(data.conversation.mode);
+      } else {
+        setModeState('auto');
+      }
       const restored: DisplayMessage[] = (data.messages ?? [])
         .filter((m) => m.role === 'user' || m.role === 'assistant')
         .map((m) => ({
@@ -1580,12 +1764,38 @@ export default function Home() {
           role: m.role,
           content: m.content ?? '',
           attachments: m.metadata?.attachments,
+          createdAt: m.created_at ? new Date(m.created_at).getTime() : undefined,
         }));
       setMessages(restored);
     } catch {
       setMessages([]);
     }
   }, []);
+
+  const setMode = useCallback(
+    async (next: ConvMode) => {
+      setModeState(next);
+      setLastDecidedMode(null);
+      // If conversation exists, persist. If not, the next chat request
+      // will pass `mode` and the server will use it on insert.
+      if (conversationId) {
+        try {
+          await fetch(`/api/conversations/${conversationId}`, {
+            method: 'PATCH',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ mode: next }),
+          });
+          // Update the sidebar list cache so the conversation summary reflects the change.
+          setConversations((prev) =>
+            prev.map((c) => (c.id === conversationId ? { ...c, mode: next } : c)),
+          );
+        } catch {
+          // ignore — local state already updated
+        }
+      }
+    },
+    [conversationId],
+  );
 
   const startNewChat = useCallback(() => {
     if (typeof window !== 'undefined') {
@@ -1595,6 +1805,8 @@ export default function Home() {
     setMessages([]);
     setToolCalls([]);
     setError(null);
+    setModeState('auto');
+    setLastDecidedMode(null);
     setStreamingText('');
     setStatus('idle');
     setTimeout(() => inputRef.current?.focus(), 50);
@@ -1669,6 +1881,7 @@ export default function Home() {
             role: 'user' | 'assistant';
             content: string | null;
             metadata?: { attachments?: Attachment[] };
+            created_at?: string;
           }>;
         };
         const restored: DisplayMessage[] = (data.messages ?? [])
@@ -1678,6 +1891,7 @@ export default function Home() {
             role: m.role,
             content: m.content ?? '',
             attachments: m.metadata?.attachments,
+            createdAt: m.created_at ? new Date(m.created_at).getTime() : undefined,
           }));
         if (restored.length > 0) setMessages(restored);
       } catch {
@@ -1713,6 +1927,7 @@ export default function Home() {
         role: 'user',
         content: trimmed,
         attachments: pendingAttachments.length > 0 ? pendingAttachments : undefined,
+        createdAt: Date.now(),
       };
 
       const history = messages.map((m) => ({
@@ -1724,6 +1939,7 @@ export default function Home() {
       setInput('');
       setPendingAttachments([]); // clear after send
       setStatus('streaming');
+      setLastDecidedMode(null);
 
       const streamId = `asst_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`;
       setStreamingId(streamId);
@@ -1742,6 +1958,7 @@ export default function Home() {
             conversationId: conversationIdRef.current,
             model,
             attachments: pendingAttachments,
+            mode,
           }),
           signal: controller.signal,
         });
@@ -1836,10 +2053,14 @@ export default function Home() {
         case 'message_delta':
           setStreamingText((prev) => prev + evt.content);
           break;
+        case 'mode_decided':
+          // Auto mode: agent's per-turn decision. Show a small badge.
+          setLastDecidedMode(evt.mode);
+          break;
         case 'message_end':
           setMessages((prev) => [
             ...prev,
-            { id: streamId, role: 'assistant', content: evt.content },
+            { id: streamId, role: 'assistant', content: evt.content, createdAt: Date.now() },
           ]);
           setStreamingText('');
           break;
@@ -1873,8 +2094,13 @@ export default function Home() {
     }
   };
 
+  // Visually empty = no messages AND (no tool calls OR trace hidden).
+  // The user can't see tool calls when trace is off, so the empty state
+  // (suggestion chips) should still show.
   const isEmpty =
-    hydrationDone && messages.length === 0 && toolCalls.length === 0;
+    hydrationDone &&
+    messages.length === 0 &&
+    (toolCalls.length === 0 || !showToolTrace);
 
   if (!authChecked) {
     return (
@@ -1914,6 +2140,8 @@ export default function Home() {
           currentUser={currentUser}
           onLogout={logout}
           narrow={sidebarCollapsed}
+          showToolTrace={showToolTrace}
+          setShowToolTrace={setShowToolTrace}
         />
       </div>
 
@@ -1940,6 +2168,26 @@ export default function Home() {
               model={model}
               setModel={setModel}
             />
+            <span className="text-zinc-400">·</span>
+            <ModePicker
+              mode={mode}
+              onChange={setMode}
+              disabled={status === 'streaming'}
+              lang={lang}
+            />
+            {mode === 'auto' && lastDecidedMode && status === 'streaming' && (
+              <span
+                className={`ml-1 inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[10px] ${
+                  lastDecidedMode === 'expert'
+                    ? 'bg-violet-100 text-violet-700 dark:bg-violet-900/40 dark:text-violet-300'
+                    : 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/40 dark:text-emerald-300'
+                }`}
+                title={t(lang, `mode.decided.${lastDecidedMode}`)}
+              >
+                <span className={`h-1.5 w-1.5 rounded-full ${lastDecidedMode === 'expert' ? 'bg-violet-500' : 'bg-emerald-500'}`} />
+                {t(lang, `mode.decided.${lastDecidedMode}`)}
+              </span>
+            )}
           </div>
           <div className="flex items-center gap-2">
             {/* Right side intentionally empty — user menu lives in sidebar bottom (ChatGPT pattern) */}
@@ -1959,6 +2207,8 @@ export default function Home() {
                 status={status}
                 error={error}
                 onLightbox={setLightboxUrl}
+                showToolTrace={showToolTrace}
+                onHideToolTrace={() => setShowToolTrace(false)}
               />
             )}
             <div ref={messagesEndRef} />
@@ -2057,6 +2307,8 @@ function MessageList({
   status,
   error,
   onLightbox,
+  showToolTrace,
+  onHideToolTrace,
 }: {
   messages: DisplayMessage[];
   toolCalls: ToolCallDisplay[];
@@ -2065,16 +2317,38 @@ function MessageList({
   status: 'idle' | 'streaming';
   error: string | null;
   onLightbox: (url: string) => void;
+  showToolTrace: boolean;
+  onHideToolTrace: () => void;
 }) {
+  // Inline "展开" override — when the user clicks reveal on the summary
+  // pill, we flip this for the rest of the session without persisting.
+  const [revealOnce, setRevealOnce] = useState(false);
+  const renderTrace = showToolTrace || revealOnce;
+
   const items: Array<
     | { kind: 'message'; msg: DisplayMessage }
     | { kind: 'streaming-bubble'; streamId: string; text: string }
     | { kind: 'tool'; tool: ToolCallDisplay }
+    | { kind: 'tool-summary'; count: number; key: string }
     | { kind: 'error'; text: string }
   > = [];
 
   for (const m of messages) items.push({ kind: 'message', msg: m });
-  for (const tc of toolCalls) items.push({ kind: 'tool', tool: tc });
+
+  // Tool calls: only render the verbose `ToolCard` when showToolTrace is on
+  // (or the user clicked "展开" inline). When off and ≥2 tool calls, render
+  // a single collapsed "did N things" pill so the user knows the agent did
+  // work, but doesn't see the process.
+  if (renderTrace) {
+    for (const tc of toolCalls) items.push({ kind: 'tool', tool: tc });
+  } else if (toolCalls.length >= 2) {
+    items.push({
+      kind: 'tool-summary',
+      count: toolCalls.length,
+      key: `tcsum_${toolCalls[0].id}`,
+    });
+  }
+
   if (status === 'streaming' && streamingId) {
     items.push({
       kind: 'streaming-bubble',
@@ -2096,7 +2370,24 @@ function MessageList({
               streaming={true}
             />
           );
-        if (it.kind === 'tool') return <ToolCard key={it.tool.id} tool={it.tool} />;
+        if (it.kind === 'tool')
+          return (
+            <ToolCard
+              key={it.tool.id}
+              tool={it.tool}
+              showDismiss={!showToolTrace /* only show ✕ when trace was on by global toggle, not local reveal */}
+              onDismiss={onHideToolTrace}
+            />
+          );
+        if (it.kind === 'tool-summary') {
+          return (
+            <ToolSummaryPill
+              key={it.key}
+              count={it.count}
+              onReveal={() => setRevealOnce(true)}
+            />
+          );
+        }
         return (
           <div
             key={`err${i}`}
@@ -2110,12 +2401,29 @@ function MessageList({
   );
 }
 
+function ToolSummaryPill({ count, onReveal }: { count: number; onReveal: () => void }) {
+  return (
+    <div className="-mt-3 flex items-center gap-2 text-[11px] text-zinc-400">
+      <span className="inline-block h-1.5 w-1.5 rounded-full bg-emerald-500" />
+      <span>做了 {count} 步后台操作(记忆 / 查数据 等)</span>
+      <button
+        onClick={onReveal}
+        className="ml-1 underline-offset-2 hover:text-zinc-600 hover:underline dark:hover:text-zinc-300"
+        type="button"
+      >
+        展开
+      </button>
+    </div>
+  );
+}
+
 function Bubble({ msg, onLightbox }: { msg: DisplayMessage; onLightbox?: (url: string) => void }) {
   const attachments = msg.attachments ?? [];
   if (msg.role === 'user') {
     // ChatGPT: user messages have a subtle rounded bg, no bubble border.
+    // Footer (copy + time) is right-aligned under the bubble.
     return (
-      <div className="flex justify-end">
+      <div className="flex flex-col items-end gap-1">
         <div className="max-w-[85%] rounded-2xl rounded-br-md bg-zinc-100 px-4 py-2 text-[14px] text-zinc-900 dark:bg-zinc-800 dark:text-zinc-100">
           {attachments.length > 0 && (
             <div className="mb-2 flex flex-wrap gap-1.5">
@@ -2161,60 +2469,217 @@ function Bubble({ msg, onLightbox }: { msg: DisplayMessage; onLightbox?: (url: s
             <div className="whitespace-pre-wrap break-words">{msg.content}</div>
           )}
         </div>
+        <MessageActions
+          content={msg.content}
+          createdAt={msg.createdAt}
+          streaming={false}
+          align="right"
+        />
       </div>
     );
   }
-  return <AssistantStreamBubble text={msg.content} streaming={false} />;
+  return <AssistantStreamBubble text={msg.content} streaming={false} createdAt={msg.createdAt} />;
 }
 
 function AssistantStreamBubble({
   text,
   streaming,
+  createdAt,
 }: {
   text: string;
   streaming: boolean;
+  createdAt?: number;
 }) {
-  // Assistant: no bubble, no border, just well-formatted text.
+  // Assistant: no bubble, no border. Markdown is rendered via ReactMarkdown +
+  // remark-gfm (tables, strikethrough, task lists, autolinks). The raw text
+  // is preserved for the copy button — we never stringify the rendered HTML.
+  //
+  // `displayText` strips a leading run of punctuation that the LLM sometimes
+  // produces as a "list-continuation" artifact (e.g. ", 最终版 bio" or
+  // "; 接下来..."). The strip is bounded so we never eat real content like
+  // a numbered list "1. xxx" — we only remove `,.;:` at the very start
+  // (optionally preceded by whitespace), and stop at the first letter / digit
+  // / Chinese char.
+  const displayText = streaming ? text : stripLeadingPunctuation(text);
   return (
-    <div className="flex items-start gap-2">
+    <div className="group flex flex-col gap-2">
       <div className="text-[14px] leading-7 text-zinc-800 dark:text-zinc-200">
-        <div className="prose prose-zinc max-w-none whitespace-pre-wrap break-words dark:prose-invert">
-          {text}
+        <div className="prose prose-zinc max-w-none break-words dark:prose-invert prose-headings:font-semibold prose-headings:tracking-tight prose-h1:text-2xl prose-h1:mt-4 prose-h1:mb-2 prose-h2:text-xl prose-h2:mt-4 prose-h2:mb-2 prose-h3:text-base prose-h3:mt-3 prose-h3:mb-1.5 prose-p:my-2 prose-ul:my-2 prose-ol:my-2 prose-li:my-0.5 prose-table:my-3 prose-th:px-3 prose-th:py-1.5 prose-td:px-3 prose-td:py-1.5 prose-hr:my-4 prose-hr:border-zinc-200 dark:prose-hr:border-zinc-800 prose-pre:my-2 prose-pre:bg-zinc-950 prose-pre:text-zinc-100 prose-code:before:hidden prose-code:after:hidden">
+          <ReactMarkdown remarkPlugins={[remarkGfm, remarkBreaks]}>{displayText}</ReactMarkdown>
           {streaming && (
             <span className="ml-0.5 inline-block h-4 w-1.5 translate-y-0.5 animate-pulse bg-violet-500" />
           )}
         </div>
       </div>
+      <MessageActions
+        content={displayText}
+        createdAt={createdAt}
+        streaming={streaming}
+      />
     </div>
   );
 }
 
-function ToolCard({ tool }: { tool: ToolCallDisplay }) {
+/**
+ * Strip a leading run of single-character punctuation + whitespace, stopping
+ * at the first real word. Preserves "1. xxx" (digit) and "# header" / "##"
+ * (markdown sigil + space) untouched. Only trims `,.;:` ` ` `\n` `\t`.
+ *
+ * Examples:
+ *   ", 最终版 bio 给你:"  → "最终版 bio 给你:"
+ *   "  ;  接下来..."     → "接下来..."
+ *   "1. 第一步"          → "1. 第一步"  (digit preserved)
+ *   "## 标题"            → "## 标题"    (markdown heading preserved)
+ */
+function stripLeadingPunctuation(text: string): string {
+  let i = 0;
+  while (i < text.length) {
+    const c = text[i];
+    if (c === ' ' || c === '\n' || c === '\t' || c === '\r') {
+      i++;
+      continue;
+    }
+    if (c === ',' || c === ';' || c === ':' || c === '.' || c === '、' || c === ',') {
+      // Comma-like fullwidth chars too
+      i++;
+      continue;
+    }
+    break;
+  }
+  return i > 0 ? text.slice(i) : text;
+}
+
+function MessageActions({
+  content,
+  createdAt,
+  streaming,
+  align = 'left',
+}: {
+  content: string;
+  createdAt: number | undefined;
+  streaming: boolean;
+  /** 'left' for assistant messages, 'right' for user messages (so the
+   *  footer lines up with the bubble edge). */
+  align?: 'left' | 'right';
+}) {
+  const [copied, setCopied] = useState(false);
+
+  const onCopy = useCallback(async () => {
+    try {
+      // Copy the RAW markdown text, not the rendered HTML — so when the
+      // user pastes into another markdown editor (Notion, Obsidian, etc.)
+      // formatting is preserved.
+      await navigator.clipboard.writeText(content);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 1500);
+    } catch {
+      // Fallback for environments without clipboard API: select-and-copy via
+      // a hidden textarea. Rare path but worth handling.
+      const ta = document.createElement('textarea');
+      ta.value = content;
+      ta.style.position = 'fixed';
+      ta.style.opacity = '0';
+      document.body.appendChild(ta);
+      ta.select();
+      try { document.execCommand('copy'); setCopied(true); setTimeout(() => setCopied(false), 1500); } catch {}
+      document.body.removeChild(ta);
+    }
+  }, [content]);
+
+  const time = createdAt ? formatTime(createdAt) : '';
+
+  // Hide while streaming — incomplete content shouldn't be copyable / time-shown.
+  if (streaming) return null;
+
+  return (
+    <div
+      className={`flex items-center gap-1.5 text-[11px] text-zinc-400 dark:text-zinc-500 ${
+        align === 'right' ? 'justify-end' : 'justify-start'
+      }`}
+    >
+      <button
+        type="button"
+        onClick={onCopy}
+        className="inline-flex h-6 w-6 items-center justify-center rounded transition hover:bg-zinc-100 hover:text-zinc-700 dark:hover:bg-zinc-800/60 dark:hover:text-zinc-200"
+        aria-label={copied ? '已复制' : '复制'}
+        title={copied ? '已复制' : align === 'right' ? '复制' : '复制原始 markdown'}
+      >
+        {copied ? (
+          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" className="text-emerald-500">
+            <polyline points="20 6 9 17 4 12" />
+          </svg>
+        ) : (
+          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+            <rect x="9" y="9" width="13" height="13" rx="2" ry="2" />
+            <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1" />
+          </svg>
+        )}
+      </button>
+      {time && <span className="tabular-nums">{time}</span>}
+    </div>
+  );
+}
+
+function formatTime(ms: number): string {
+  const d = new Date(ms);
+  const hh = String(d.getHours()).padStart(2, '0');
+  const mm = String(d.getMinutes()).padStart(2, '0');
+  return `${hh}:${mm}`;
+}
+
+function ToolCard({
+  tool,
+  showDismiss,
+  onDismiss,
+}: {
+  tool: ToolCallDisplay;
+  /** When true, show a ✕ button on the right that turns off the global
+   *  tool-trace setting. Only set when the trace was enabled by the user
+   *  setting (not by the inline "展开" reveal). */
+  showDismiss?: boolean;
+  onDismiss?: () => void;
+}) {
   const [open, setOpen] = useState(false);
   const durationMs =
     tool.endedAt && tool.startedAt ? tool.endedAt - tool.startedAt : null;
 
   return (
     <div className="overflow-hidden rounded-lg border border-zinc-200 bg-zinc-50 text-[12px] dark:border-zinc-800 dark:bg-zinc-900/40">
-      <button
-        onClick={() => setOpen((o) => !o)}
-        className="flex w-full items-center justify-between gap-2 px-3 py-2 text-left transition hover:bg-zinc-100 dark:hover:bg-zinc-800/60"
-      >
-        <div className="flex items-center gap-2">
-          <StatusDot status={tool.status} />
-          <span className="font-mono text-zinc-700 dark:text-zinc-300">
-            {tool.name}
-          </span>
-          {durationMs !== null && (
-            <span className="text-zinc-400 dark:text-zinc-500">
-              {durationMs}ms
+      <div className="flex w-full items-center">
+        <button
+          onClick={() => setOpen((o) => !o)}
+          className="flex flex-1 items-center justify-between gap-2 px-3 py-2 text-left transition hover:bg-zinc-100 dark:hover:bg-zinc-800/60"
+        >
+          <div className="flex items-center gap-2">
+            <StatusDot status={tool.status} />
+            <span className="font-mono text-zinc-700 dark:text-zinc-300">
+              {tool.name}
             </span>
-          )}
-        </div>
-        <span className="text-zinc-400 dark:text-zinc-500">
-          {open ? '▾' : '▸'}
-        </span>
-      </button>
+            {durationMs !== null && (
+              <span className="text-zinc-400 dark:text-zinc-500">
+                {durationMs}ms
+              </span>
+            )}
+          </div>
+          <span className="text-zinc-400 dark:text-zinc-500">
+            {open ? '▾' : '▸'}
+          </span>
+        </button>
+        {showDismiss && onDismiss && (
+          <button
+            type="button"
+            onClick={onDismiss}
+            className="mr-2 inline-flex h-6 w-6 items-center justify-center rounded text-zinc-400 transition hover:bg-zinc-200 hover:text-zinc-700 dark:hover:bg-zinc-800 dark:hover:text-zinc-200"
+            aria-label="隐藏所有工具调用"
+            title="隐藏所有工具调用(以后都不显示)"
+          >
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+              <path d="M18 6 6 18" />
+              <path d="m6 6 12 12" />
+            </svg>
+          </button>
+        )}
+      </div>
       {open && (
         <div className="border-t border-zinc-200 bg-white px-3 py-2 font-mono text-[11px] text-zinc-600 dark:border-zinc-800 dark:bg-zinc-950/40 dark:text-zinc-400">
           <div className="mb-1 text-zinc-400 dark:text-zinc-500">args</div>

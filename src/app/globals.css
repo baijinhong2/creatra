@@ -1,4 +1,5 @@
 @import "tailwindcss";
+@plugin "@tailwindcss/typography";
 
 /* Enable class-based dark mode (`.dark` on a parent) — instead of the
    default prefers-color-scheme media query. We control the toggle in
