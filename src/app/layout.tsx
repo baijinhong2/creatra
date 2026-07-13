@@ -1,4 +1,4 @@
-import type { Metadata } from "next";
+import type { Metadata, Viewport } from "next";
 import { Geist, Geist_Mono } from "next/font/google";
 import "./globals.css";
 
@@ -34,6 +34,19 @@ export const metadata: Metadata = {
       noimageindex: true,
     },
   },
+};
+
+// Mobile viewport. Without this, mobile browsers render the page at
+// desktop scale (~960px) and downscale — fonts/buttons become tiny.
+export const viewport: Viewport = {
+  width: 'device-width',
+  initialScale: 1,
+  maximumScale: 5,
+  // Cap zoom-out for layout stability; allow zoom-in for accessibility.
+  themeColor: [
+    { media: '(prefers-color-scheme: light)', color: '#ffffff' },
+    { media: '(prefers-color-scheme: dark)', color: '#09090b' },
+  ],
 };
 
 export default function RootLayout({
