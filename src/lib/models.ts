@@ -14,26 +14,26 @@
  */
 
 export const MODELS = [
-  {
-    id: 'deepseek-v4-flash',
-    label: 'DeepSeek V4-flash',
-    description: '更便宜更快,日常运营够用',
-    badge: '快',
-  },
-  {
-    id: 'deepseek-v4-pro',
-    label: 'DeepSeek V4-pro',
-    description: '更聪明,适合复杂策略/创意',
-    badge: '强',
-  },
+ {
+ id:'deepseek-v4-flash',
+ label:'DeepSeek V4-flash',
+ description:'更便宜更快,日常运营够用',
+ badge:'快',
+ },
+ {
+ id:'deepseek-v4-pro',
+ label:'DeepSeek V4-pro',
+ description:'更聪明,适合复杂策略/创意',
+ badge:'强',
+ },
 ] as const;
 
 export type ModelId = (typeof MODELS)[number]['id'];
 
-export const DEFAULT_MODEL: ModelId = 'deepseek-v4-flash';
+export const DEFAULT_MODEL: ModelId ='deepseek-v4-flash';
 
-export const MODEL_STORAGE_KEY = 'vp_model';
+export const MODEL_STORAGE_KEY ='vp_model';
 
 export function getModel(id: string | undefined): ModelId {
-  return id === 'deepseek-v4-pro' ? 'deepseek-v4-pro' : DEFAULT_MODEL;
+ return id ==='deepseek-v4-pro'?'deepseek-v4-pro': DEFAULT_MODEL;
 }

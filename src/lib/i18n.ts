@@ -1,226 +1,342 @@
 /**
- * Tiny i18n for viralpost. ZH is the default.
+ * i18n for creatra (社交运营顾问)。
+ *
+ * 单一语言:中文。所有 key 直接返回 zh 字符串。
+ * 保留 dict 是为了集中管理文案,方便后续 grep / 修改。
  *
  * Usage:
- *   const lang = 'zh' | 'en';
- *   const text = t(lang, 'sidebar.newChat');
- *
- * Keep keys flat and ASCII for easy grep. Add new strings here, not inline
- * in components. If a key is missing, returns the EN fallback (so reviewers
- * see English missing keys clearly) wrapped in `!` markers.
+ *   const text = t('sidebar.newChat');
  */
-
-export type Lang = 'zh' | 'en';
-export type Theme = 'light' | 'dark';
-
-export const DEFAULT_LANG: Lang = 'zh';
-export const DEFAULT_THEME: Theme = 'light';
-
-export const LANG_STORAGE_KEY = 'vp_lang';
-export const THEME_STORAGE_KEY = 'vp_theme';
-export const TOOL_TRACE_STORAGE_KEY = 'vp_show_tool_trace';
 
 const dict = {
   // ── App identity ──────────────────────────────────────────
-  'app.name': { zh: 'viralpost', en: 'viralpost' },
-  'app.tagline': { zh: 'X 增长 agent', en: 'X growth agent' },
-  'app.version': { zh: '本地版 v0.2', en: 'Local build v0.2' },
-  'app.taglineShort': { zh: 'X 运营合伙人', en: 'X ops partner' },
-
-  // Theme toggle
-  'sidebar.theme.label': { zh: '外观', en: 'Theme' },
-  'sidebar.theme.light': { zh: '明亮', en: 'Light' },
-  'sidebar.theme.dark': { zh: '暗色', en: 'Dark' },
+  'app.name':           'creatra',
+  'app.tagline':        'X 增长 agent',
+  'app.version':        '本地版 v0.2',
+  'app.taglineShort':   'X 运营合伙人',
 
   // ── Sidebar ──────────────────────────────────────────────
-  'sidebar.newChat': { zh: '新对话', en: 'New chat' },
-  'sidebar.recent': { zh: '最近对话', en: 'Recent' },
-  'sidebar.refresh': { zh: '刷新', en: 'Refresh' },
-  'sidebar.emptyChats': { zh: '还没有对话 — 点上面开一个', en: 'No chats yet — start one ↑' },
-  'sidebar.sources': { zh: '数据源', en: 'Sources' },
-  'mode.label': { zh: '交互模式', en: 'Mode' },
-  'mode.auto.label': { zh: '自动', en: 'Auto' },
-  'mode.auto.desc': { zh: 'agent 根据话题自动切换专家/助手', en: 'Agent picks expert or assistant per turn' },
-  'mode.expert.label': { zh: '专家', en: 'Expert' },
-  'mode.expert.desc': { zh: '耐心导师,带选项引导,解释"为什么"', en: 'Patient mentor — guides with options, explains the why' },
-  'mode.assistant.label': { zh: '助手', en: 'Assistant' },
-  'mode.assistant.desc': { zh: '高效执行,直接给成品,不铺垫', en: 'Efficient executor — gives you the deliverable' },
-  'mode.decided.expert': { zh: '本轮:专家', en: 'this turn: expert' },
-  'mode.decided.assistant': { zh: '本轮:助手', en: 'this turn: assistant' },
-  'sidebar.lang.label': { zh: '界面语言', en: 'Interface language' },
-  'sidebar.lang.zh': { zh: '中文', en: 'Chinese' },
-  'sidebar.lang.en': { zh: '英文', en: 'English' },
+  'sidebar.newChat':    '新对话',
+  'sidebar.recent':     '最近对话',
+  'sidebar.refresh':    '刷新',
+  'sidebar.emptyChats': '还没有对话 — 点上面开一个',
+  'sidebar.sources':    '数据源',
+
+  // ── Mode picker ──────────────────────────────────────────
+  'mode.label':         '交互模式',
+  'mode.auto.label':    '自动',
+  'mode.auto.desc':     'agent 根据话题自动切换专家/助手',
+  'mode.expert.label':  '专家',
+  'mode.expert.desc':   '耐心导师,带选项引导,解释"为什么"',
+  'mode.assistant.label': '助手',
+  'mode.assistant.desc':  '高效执行,直接给成品,不铺垫',
+  'mode.decided.expert':   '本轮:专家',
+  'mode.decided.assistant': '本轮:助手',
 
   // ── Top bar ──────────────────────────────────────────────
-  'topbar.chat': { zh: '对话中', en: 'Chat' },
-  'topbar.newChat': { zh: '新对话', en: 'New chat' },
+  'topbar.chat':        '对话中',
+  'topbar.newChat':     '新对话',
 
   // ── Empty state ──────────────────────────────────────────
-  'empty.greeting': { zh: '你好 — 我是你的 X 运营合伙人。', en: "Hi — I'm your X ops partner." },
-  'empty.body': {
-    zh: '我专门做 X 账号运营,9 项核心能力 + 2 个通用工具:定位挖掘 · 用户名/bio · 对标博主 · 内容策略 · 每日推文 · 评论回复 · 竞品互动 · 数据分析 · 沉淀梳理;外加搜全网热点、找推文配图。挑一个起点,或者直接说要啥。',
-    en: 'I run X accounts end-to-end. 9 core skills + 2 general tools: positioning · username/bio · similar creators · content strategy · daily tweets · comment replies · competitor engagement · analytics · reflection capture; plus web search for trends and image search for tweets. Pick a starter or just say what you need.',
-  },
-  'empty.tagline': { zh: '你的 X 运营合伙人 · 9 项能力 + 2 个通用工具', en: 'Your X ops partner · 9 skills + 2 tools' },
-  'empty.skillsHint': {
-    zh: '所有能力 →',
-    en: 'All skills →',
-  },
+  'empty.greeting':     '你好 — 我是你的 X 运营合伙人。',
+  'empty.body':         '我专门做 X 账号运营,9 项核心能力 + 2 个通用工具:定位挖掘 · 用户名/bio · 对标博主 · 内容策略 · 每日推文 · 评论回复 · 竞品互动 · 数据分析 · 沉淀梳理;外加搜全网热点、找推文配图。挑一个起点,或者直接说要啥。',
+  'empty.tagline':      '你的 X 运营合伙人 · 9 项能力 + 2 个通用工具',
+  'empty.skillsHint':   '所有能力 →',
 
-  // Suggested prompts — covers the most common entry points across the
-  // 8-skill catalog. Order: process-natural for a new user.
-  'prompt.positioning.title': { zh: '从 0 定位账号', en: 'Position my account' },
-  'prompt.positioning.body': { zh: '我想搞个 X 账号,但不知道做啥方向。帮我挖一下。', en: 'I want to start an X account but have no idea what niche. Help me figure it out.' },
-  'prompt.brand.title': { zh: '取名 + bio', en: 'Username + bio' },
-  'prompt.brand.body': { zh: '我的定位是 X,帮我取个用户名 + 写个 bio + 想个头像方向。', en: 'My niche is X. Help me pick a handle, write a bio, and figure out an avatar direction.' },
-  'prompt.creators.title': { zh: '找对标博主', en: 'Find creators to follow' },
-  'prompt.creators.body': { zh: '基于我的定位,推荐 10 个我应该 follow 的对标(分大 V / 成长中 / 新兴三档)。', en: 'Based on my positioning, recommend 10 similar creators to follow (split into big / growing / emerging).' },
-  'prompt.strategy.title': { zh: '内容更新策略', en: 'Content + update strategy' },
-  'prompt.strategy.body': { zh: '结合对标和我的项目,给我 3 个内容 pillar + 更新频次/时段/形式的策略。', en: 'Combine my watchlist and my projects into a strategy: 3 content pillars + frequency + format mix.' },
-  'prompt.daily.title': { zh: '今天发什么', en: "Today's tweets" },
-  'prompt.daily.body': { zh: '今天发什么推文?给我 3 条直接可发的,带配图说明。', en: "Plan today's tweets. Give me 3 publishable ones with image guidance." },
-  'prompt.replies.title': { zh: '看评论 / 写回复', en: 'Triage my comments' },
-  'prompt.replies.body': { zh: '帮我看我最近推文下面的评论,哪些值得回,你给我直接能发的回复。', en: 'Look at the comments on my recent tweets — which deserve a reply, and draft a publishable one.' },
-  'prompt.engage.title': { zh: '竞品互动', en: 'Engage competitors' },
-  'prompt.engage.body': { zh: '看 @xxx 最近发了啥,挑值得我评论的去互动,给我直接能发的评论。', en: "Look at @xxx's recent tweets. Pick the ones worth engaging with and draft a publishable comment for each." },
-  'prompt.analytics.title': { zh: '我的数据', en: 'My analytics' },
-  'prompt.analytics.body': { zh: '看我最近 20 条推文表现,哪些火、哪些没火、下周该调整啥。', en: 'Look at my last 20 tweets — which worked, which didnt, what to change next week.' },
-  'prompt.insights.title': { zh: '沉淀 / 反思', en: 'Capture insight' },
-  'prompt.insights.body': {
-    zh: '我做了个项目 / 我有个想法,你帮我反推+引导+归纳,沉淀成结构化内容,以后写推文能用上。',
-    en: 'I just did a project / have a thought. Help me draw it out, structure it, and save it for future tweets.',
-  },
-  'prompt.searchNews.title': { zh: '搜全网热点', en: 'Search trends' },
-  'prompt.searchNews.body': {
-    zh: '帮我搜一下最近 [赛道] 的新闻/热点/趋势,要带链接和发布时间。',
-    en: 'Search the web for recent news/trends in [niche] — include URLs and dates.',
-  },
-  'prompt.findImage.title': { zh: '找推文配图', en: 'Find tweet image' },
-  'prompt.findImage.body': {
-    zh: '我要发一条关于 [主题] 的推文,帮我找 3-6 张可用的配图(老照片 / 截图 / 通用 stock),带 URL。',
-    en: "I'm posting a tweet about [topic]. Find 3-6 usable hero images (stock / screenshots / open-web) with URLs.",
-  },
+  // ── Suggested prompts (11 项能力入口) ──────────────────────
+  'prompt.positioning.title': '从 0 定位账号',
+  'prompt.positioning.body':  '我想搞个 X 账号,但不知道做啥方向。帮我挖一下。',
+  'prompt.brand.title':       '取名 + bio',
+  'prompt.brand.body':        '我的定位是 X,帮我取个用户名 + 写个 bio + 想个头像方向。',
+  'prompt.creators.title':    '找对标博主',
+  'prompt.creators.body':     '基于我的定位,推荐 10 个我应该关注的创作者(分头部 / 成长中 / 新兴三档)。',
+  'prompt.strategy.title':    '内容更新策略',
+  'prompt.strategy.body':     '结合对标和我的项目,给我 3 个内容方向 + 更新频次/时段/形式的策略。',
+  'prompt.daily.title':       '今天发什么',
+  'prompt.daily.body':        '今天发什么推文?给我 3 条直接可发的,带配图说明。',
+  'prompt.replies.title':     '看评论 / 写回复',
+  'prompt.replies.body':      '帮我看我最近推文下面的评论,哪些值得回,你给我直接能发的回复。',
+  'prompt.engage.title':      '竞品互动',
+  'prompt.engage.body':       '看 @xxx 最近发了啥,挑值得我评论的去互动,给我直接能发的评论。',
+  'prompt.analytics.title':   '我的数据',
+  'prompt.analytics.body':    '看我最近 20 条推文表现,哪些火、哪些没火、下周该调整啥。',
+  'prompt.insights.title':    '沉淀 / 反思',
+  'prompt.insights.body':     '我做了个项目 / 我有个想法,你帮我反推+引导+归纳,沉淀成结构化内容,以后写推文能用上。',
+  'prompt.searchNews.title':  '搜全网热点',
+  'prompt.searchNews.body':   '帮我搜一下最近 [赛道] 的新闻/热点/趋势,要链接 + 一句话总结。',
+  'prompt.findImage.title':   '找配图',
+  'prompt.findImage.body':    '我想要一张 [描述] 的图,帮我从网上找几个候选 + 链接。',
 
-  // User menu popover
-  'menu.theme': { zh: '外观', en: 'Theme' },
-  'menu.theme.light': { zh: '明亮', en: 'Light' },
-  'menu.theme.dark': { zh: '暗色', en: 'Dark' },
-  'menu.display': { zh: '显示', en: 'Display' },
-  'menu.showToolTrace': { zh: '显示工具调用', en: 'Show tool calls' },
-  'menu.showToolTrace.hint': { zh: '关掉只看 agent 的最终回复;开起来可以看到 remember_preference / web_search 等工具的调用过程(调试用)', en: 'Off = only see the agent\'s final reply. On = also see tool calls (debug only).' },
-  'menu.language': { zh: '语言', en: 'Language' },
-  'menu.logout': { zh: '登出', en: 'Log out' },
-  'menu.settings': { zh: '设置', en: 'Settings' },
-  'menu.userMenuAria': { zh: '打开用户菜单', en: 'Open user menu' },
+  // ── Onboarding gate banner ───────────────────────────────
+  'gate.title':             '先花 1 分钟设置你的声音 DNA',
+  'gate.subtitle':          '让 agent 学你说话,写出来更像你。',
+  'gate.cta':               '开始',
+  'gate.dismiss':           '不再提示',
+  'gate.alreadySet':        '你已经设置过声音 DNA',
+
+  // ── Onboarding index ─────────────────────────────────────
+  'onb.subtitle':           '让我学你说话,之后推文更像你写的。',
+  'onb.pathA.title':        '我有内容',
+  'onb.pathA.subtitle':     '从推文、博客、Newsletter 提取',
+  'onb.pathA.time':         '~10-30 秒',
+  'onb.template.title':     '直接选模板',
+  'onb.template.subtitle':  '5 个写作模板,选 1 个就走',
+  'onb.template.time':      '~30 秒',
+  'onb.template.recommended':'推荐',
+  'onb.pathB.title':        '我想用某博主的风格',
+  'onb.pathB.subtitle':     '粘 1-3 个对标账号',
+  'onb.pathB.time':         '~1-2 分钟',
+  'onb.pathC.title':        '从 0 开始 / 聊聊自己',
+  'onb.pathC.subtitle':     'AI 跟我聊聊,帮我找出声音',
+  'onb.pathC.time':         '~5-10 分钟',
+  'onb.skip':               '跳过,稍后设置',
+
+  // ── Path A (paste handle) ────────────────────────────────
+  'pathA.title':            '粘你的 X 账号',
+  'pathA.subtitle':         '拉最近 25 条原创推文,提取你的风格。',
+  'pathA.placeholder':      '@your_handle',
+  'pathA.hint':             '需要 X cookies 配好;没有的话,试试下面的"粘文字"。',
+  'pathA.extract':          '提取',
+  'pathA.pasteLink':        '粘我自己的文字',
+  'pathA.pasteHint':        '博客、Newsletter、邮件、推文都行,不需要 X cookies',
+
+  // ── Path A paste ────────────────────────────────────────
+  'pathAPaste.title':       '粘你的文字',
+  'pathAPaste.subtitle':    '至少 200 字,我拆 5+ 段提取你的风格。',
+  'pathAPaste.placeholder': '在这里粘贴你的内容',
+  'pathAPaste.sources':     '内容来源',
+  'pathAPaste.extract':     '提取 DNA',
+  'pathAPaste.back':        '返回',
+
+  // ── Path B (paste handles) ───────────────────────────────
+  'pathB.title':            '粘 1-3 个对标账号',
+  'pathB.subtitle':         '拉每人 25 条,合成你的 DNA。',
+  'pathB.placeholder':      '@handle1, @handle2, @handle3',
+  'pathB.hint':             '需要 X cookies;没有的话试试其他路径。',
+  'pathB.extract':          '提取 DNA',
+
+  // ── Path B recommend (quiz) ─────────────────────────────
+  'pathBRec.title':         '让我推荐对标',
+  'pathBRec.pickOne':       '选 1-3 个,我拉他们的推文合成你的 DNA:',
+  'pathBRec.redo':          '重做 quiz',
+  'pathBRec.recommend':     '推荐',
+  'pathBRec.next':          '下一步',
+  'pathBRec.back':          '上一步',
+  'pathBRec.q.direction':   '你想看什么方向的内容?',
+  'pathBRec.q.style':       '你欣赏什么风格?',
+  'pathBRec.q.language':    '主要语言?',
+  'pathBRec.opt.saas':      '独立开发 / SaaS',
+  'pathBRec.opt.ai':        'AI / 人工智能',
+  'pathBRec.opt.tools':     '开发者工具',
+  'pathBRec.opt.content_creation': '内容创作 / 设计',
+  'pathBRec.opt.casual':    '不端着 / 聊得来',
+  'pathBRec.opt.professional': '干具体 / 商务感',
+  'pathBRec.opt.humorous':  '幽默 / 段子手',
+  'pathBRec.opt.en':        '英文',
+  'pathBRec.opt.zh':        '中文',
+
+  // ── Path C (6 questions) ────────────────────────────────
+  'pathC.title':            '跟我聊聊',
+  'pathC.subtitle':         'AI 跟我聊聊,帮我找出声音',
+  'pathC.q1.label':         '方向(可多选)',
+  'pathC.q1.hint':          '选完再补一句你具体在做的事。',
+  'pathC.q1.placeholder':  '例:前端工程师,业余做独立 SaaS,刚发布第一个产品',
+  'pathC.q2.label':         '话题类型(可多选)',
+  'pathC.q2.hint':          '最好具体到话题,不要只写"科技"。',
+  'pathC.q2.placeholder':  '例:AI agent、RAG 实践、独立开发踩坑',
+  'pathC.q3.label':         '目标(可多选)',
+  'pathC.q3.placeholder':  '例:主要想积累技术人脉,偶尔能接到客户咨询',
+  'pathC.q4.hint':          '选你希望 AI 模仿你写的样子。',
+  'pathC.q4.placeholder':  '例:少用术语,口语化,像跟朋友聊天',
+  'pathC.q5.hint':          '可选。可以是人名、一句话、或者一段描述。',
+  'pathC.q5.placeholder':  '可以多行,写你的真实想法...',
+  'pathC.q6.hint':          '可选,但强烈推荐 — 这是 AI 看到你真实声音的最佳信号。',
+  'pathC.q6.placeholder':  '随便写一条你自己会发的推文。也可以是系列推文的第一条...',
+  'pathC.samples.collapse': '收起',
+  'pathC.samples.expand':   '展开 3 个写作模板的样例参考',
+  'pathC.skip':             '跳过',
+  'pathC.next':             '下一步',
+  'pathC.prev':             '上一步',
+  'pathC.reset':            '重来',
+  'pathC.synthesizing':     '正在基于你的 6 个回答合成声音 DNA...',
+  'pathC.done':             '声音 DNA 已就绪',
+  'pathC.synthesize':       '合成我的 DNA',
+  'pathC.skipAndSynthesize':'跳过,直接合成',
+  'pathC.activity.indie_dev':    '独立开发',
+  'pathC.activity.engineer':     '工程师',
+  'pathC.activity.designer':     '设计师',
+  'pathC.activity.pm':           '产品经理',
+  'pathC.activity.student':      '学生',
+  'pathC.activity.creator':      '创作者',
+  'pathC.activity.founder':      '创业者',
+  'pathC.activity.other':        '其他',
+  'pathC.topic.tech_detail':     '技术细节',
+  'pathC.topic.recap':           '产品复盘',
+  'pathC.topic.industry':        '行业观察',
+  'pathC.topic.thinking':        '个人思考',
+  'pathC.topic.tutorial':        '教程',
+  'pathC.topic.story':           '故事',
+  'pathC.topic.other':           '其他',
+  'pathC.goal.influence':        '影响力',
+  'pathC.goal.network':          '技术人脉',
+  'pathC.goal.income':           '客户/收入',
+  'pathC.goal.record':           '单纯记录',
+  'pathC.goal.job':              '求职',
+  'pathC.goal.authority':        '行业地位',
+
+  // ── Template page ────────────────────────────────────────
+  'template.title':         '选一个写作模板',
+  'template.tagline':       '每个模板 3 个轴各占 1 个位置。',
+  'template.samples':       '样例',
+  'template.collapse':      '收起',
+  'template.expand':        '查看样例',
+  'template.pick':          '选这个',
+  'template.saving':        '保存中…',
+
+  // ── Menu / user pill ─────────────────────────────────────
+  'menu.voiceDna':          '声音 DNA',
+  'menu.voiceDna.hint':     '查看 / 重新设置你的写作风格',
+  'menu.insights':          '我的沉淀',
+  'menu.memories':          'Agent 记忆',
+  'menu.showToolTrace':     '显示工具调用',
+  'menu.showToolTrace.hint':'关掉只看 agent 的最终回复;开起来可以看到 remember_preference / web_search 等工具的调用过程(调试用)',
+  'menu.userMenuAria':      '账号菜单',
+  'menu.logout':            '登出',
+  'menu.login':             '登录',
+  'menu.display':           '显示',
+  'menu.theme':             '外观',
+  'menu.theme.light':       '明亮',
+  'menu.theme.dark':        '暗色',
+  'menu.language':          '界面语言',
+
+  // ── Topbar / messages ────────────────────────────────────
+  'topbar.stop':            '停止生成',
+  'topbar.regenerate':      '重新生成',
+  'topbar.placeholder':     '问点啥,Enter 发送,Shift+Enter 换行',
+  'topbar.placeholder.busy':'agent 跑着呢…',
 
   // ── Composer ─────────────────────────────────────────────
-  'composer.placeholder': { zh: '说点啥。Enter 发送,Shift+Enter 换行 · 拖图或点 📎 上传', en: 'Ask anything. Enter to send · drop images or click 📎' },
-  'composer.placeholderStreaming': { zh: 'agent 跑着呢…', en: 'Agent is running…' },
-  'composer.send': { zh: '发送', en: 'Send' },
-  'composer.stop': { zh: '停止', en: 'Stop' },
-  'composer.uploadAria': { zh: '上传图片(最多 10 张)', en: 'Upload images (up to 10)' },
-  'composer.uploadError': { zh: '上传失败:{err}', en: 'Upload failed: {err}' },
-  'composer.removeAttachment': { zh: '移除', en: 'Remove' },
-  'composer.footer': {
-    zh: 'viralpost 是一个真正的 agent —— 它会自己调工具,调用过程在上面流里能看到。',
-    en: 'viralpost is an autonomous agent — it can call tools. Inspect tool calls in the stream.',
-  },
+  'composer.attachment':    '附件',
+  'composer.send':          '发送',
+  'composer.model':         '模型',
 
-  // ── Conversation meta ───────────────────────────────────
-  'meta.msg': { zh: '条', en: 'msgs' },
-  'meta.justNow': { zh: '刚刚', en: 'just now' },
+  // ── Topics / Health / Inbox ──────────────────────────────
+  'topics.title':           '今日选题',
+  'topics.subtitle':        '基于你的定位 + 热点 + 历史表现',
+  'topics.loading':         '正在扫描热点、写作风格、历史表现…',
+  'topics.regenerate':      '重新生成',
+  'topics.empty':           '还没生成选题。点上面的按钮来一波。',
+  'topics.draft':           '用这个写',
+  'health.title':           '账号健康',
+  'health.subtitle':        '你的 X 账号 28 天健康度',
+  'health.regenerate':      '重新生成',
+  'health.score':           '健康度',
+  'health.empty':           '还没有数据。配好 X cookies 拉一波。',
+  'inbox.title':            '互动收件箱',
+  'inbox.subtitle':         '需要回复的评论 + 提到你',
+  'inbox.regenerate':       '重新生成',
+  'inbox.redraft':          '重新生成',
+  'inbox.empty':            '没有互动。先去发几条。',
+  'inbox.handleHint':       '用 cookie 模式拉数据,先填你的 X 账号。',
 
-  // ── Sources panel ────────────────────────────────────────
-  'source.github.label': { zh: 'GitHub token', en: 'GitHub token' },
-  'source.github.hint': { zh: '给 github_read 用。可选 —— 不填 60 次/小时,填了 5000/小时。', en: 'Used by github_read. Optional — without it you get 60 req/hour.' },
-  'source.xAuth.label': { zh: 'X (Twitter) auth_token', en: 'X (Twitter) auth_token' },
-  'source.xAuth.hint': { zh: '给 twitter_* 用。从浏览器 devtools 拿。', en: 'Used by twitter_search / twitter_get_user_tweets. From browser devtools.' },
-  'source.xCt0.label': { zh: 'X (Twitter) ct0', en: 'X (Twitter) ct0' },
-  'source.xCt0.hint': { zh: 'X 的 CSRF token,跟 auth_token 配对。', en: 'X CSRF token. Pairs with auth_token.' },
+  // ── Login / register modal ───────────────────────────────
+  'login.title':            '登录',
+  'login.subtitle':         '登录你的社交运营顾问',
+  'login.email':            '邮箱',
+  'login.emailPh':          'you@example.com',
+  'login.password':         '密码',
+  'login.passwordPh':       '至少 6 位',
+  'login.submit':           '登录',
+  'login.submitBusy':       '处理中…',
+  'login.toRegister':       '注册一个',
+  'login.noAccount':        '没账号?',
+  'login.error':            '登录失败',
+  'register.title':         '创建账号',
+  'register.subtitle':      '创建账号,开始用',
+  'register.nickname':      '昵称(可选)',
+  'register.nicknamePh':    '随便起个名字',
+  'register.submit':        '注册并登录',
+  'register.toLogin':       '去登录',
+  'register.hasAccount':    '已经有账号了?',
 
-  'source.status.set': { zh: '● 已配', en: '● set' },
-  'source.status.unset': { zh: '○ 未配', en: '○ not set' },
-  'source.btn.add': { zh: '添加', en: 'Add' },
-  'source.btn.replace': { zh: '替换', en: 'Replace' },
-  'source.btn.forget': { zh: '删除', en: 'Forget' },
-  'source.btn.save': { zh: '保存', en: 'Save' },
-  'source.btn.cancel': { zh: '取消', en: 'Cancel' },
-  'source.confirmForget': { zh: '确定删除 {key}?', en: 'Forget {key}?' },
-  'source.statusMsg.loading': { zh: '加载中…', en: 'loading…' },
-  'source.statusMsg.saved': { zh: '已存 {key}', en: 'saved {key}' },
-  'source.statusMsg.forgot': { zh: '已删 {key}', en: 'forgot {key}' },
-  'source.statusMsg.error': { zh: '出错了:{err}', en: 'error: {err}' },
-  'source.empty': { zh: '(空:{key})', en: '(empty: {key})' },
+  // ── Cross post ───────────────────────────────────────────
+  'cp.title':               '跨平台发布',
+  'cp.subtitle':            '把这条改写成其他平台格式',
+  'cp.platforms':          '目标平台',
+  'cp.regenerate':          '重新生成',
+  'cp.copy':                '复制',
+  'cp.copied':              '已复制',
 
-  // ── Chat bubbles ─────────────────────────────────────────
-  'bubble.errorPrefix': { zh: '出错了', en: 'Error' },
+  // ── Misc ─────────────────────────────────────────────────
+  'app.error':              '出错了',
+  'app.retry':              '重试',
+  'app.close':              '关闭',
+  'app.cancel':             '取消',
+  'app.confirm':            '确定',
+  'app.delete':             '删除',
+  'app.save':               '保存',
+  'app.saving':             '保存中…',
+  'app.saved':              '已保存',
 
-  // ── Tool card status ─────────────────────────────────────
-  'tool.status.running': { zh: '跑中', en: 'running' },
-  'tool.status.done': { zh: '完成', en: 'done' },
-  'tool.status.error': { zh: '失败', en: 'error' },
-  'tool.label.args': { zh: '参数', en: 'args' },
-  'tool.label.result': { zh: '结果', en: 'result' },
-  'tool.label.error': { zh: '错误', en: 'error' },
+  // ── Sidebar extras (added during simplify) ────────────────
+  'sidebar.insights':       '沉淀',
+  'sidebar.memories':       'Agent 记忆',
 
-  // ── Sidebar — My Insights (沉淀) ─────────────────────────
-  'sidebar.insights': { zh: '我的沉淀', en: 'My insights' },
-  'sidebar.memories': { zh: 'Agent 记忆', en: 'Agent memories' },
-  'insights.title': { zh: '我的沉淀', en: 'My insights' },
-  'insights.empty': {
-    zh: '还没有沉淀。在聊天里说一段有思考的话,agent 会主动问你"要不要存下来"。',
-    en: 'No insights yet. Share something thoughtful in chat and the agent will offer to save it.',
-  },
-  'insights.kind.reflection': { zh: '感悟', en: 'Reflection' },
-  'insights.kind.project_breakdown': { zh: '项目复盘', en: 'Project breakdown' },
-  'insights.kind.method': { zh: '方法论', en: 'Method' },
-  'insights.kind.discovery': { zh: '新发现', en: 'Discovery' },
-  'insights.kind.sharing': { zh: '内容分享', en: 'Sharing' },
-  'insights.kind.fragment': { zh: '碎片', en: 'Fragment' },
-  'insights.btn.copy': { zh: '复制', en: 'Copy' },
-  'insights.btn.copied': { zh: '已复制', en: 'Copied' },
-  'insights.btn.download': { zh: '下载', en: 'Download' },
-  'insights.btn.delete': { zh: '删除', en: 'Delete' },
-  'insights.btn.deleteAll': { zh: '全部下载', en: 'Download all' },
-  'insights.confirmDelete': { zh: '确定删除这条沉淀?', en: 'Delete this insight?' },
-  'insights.exportFilename': { zh: '我的沉淀', en: 'my-insights' },
+  // ── Time / meta ───────────────────────────────────────────
+  'meta.justNow':           '刚刚',
 
-  // ── Sidebar — Agent memories (preferences viewer) ────────
-  'memories.title': { zh: 'Agent 记忆', en: 'Agent memories' },
-  'memories.empty': {
-    zh: '没有记忆。Agent 会在聊天里自动存你的定位 / token / 凭据。',
-    en: 'No memories yet. The agent saves your positioning / tokens / credentials as you chat.',
-  },
-  'memories.secret': { zh: '● 已设(已隐藏)', en: '● set (redacted)' },
-  'memories.notSet': { zh: '○ 未设', en: '○ not set' },
-  'memories.btn.delete': { zh: '删除', en: 'Delete' },
-  'memories.confirmDelete': { zh: '确定删除这条记忆?', en: 'Delete this memory?' },
-  'memories.count': { zh: '条记忆', en: 'memories' },
+  // ── Insights panel ───────────────────────────────────────
+  'insights.title':         '我的沉淀',
+  'insights.empty':         '还没有沉淀。聊天中遇到值得记的,agent 会自动存。',
+  'insights.btn.copy':      '复制',
+  'insights.btn.copied':    '已复制',
+  'insights.btn.delete':    '删除',
+  'insights.btn.deleteAll': '清空全部',
+  'insights.btn.download':  '下载',
+  'insights.confirmDelete': '确定要删除这条沉淀吗?',
+  'insights.exportFilename':'沉淀',
+
+  // ── Memories panel ───────────────────────────────────────
+  'memories.title':         'Agent 记忆',
+  'memories.empty':         'agent 还没记东西。当你在聊天中确认偏好时,会自动存。',
+  'memories.notSet':        '未设置',
+  'memories.secret':        '(私密)',
+  'memories.count':         '{n} 项',
+  'memories.confirmDelete': '确定要删除这条记忆吗?',
+
+  // ── Source / API key panel ───────────────────────────────
+  'source.github.label':    'GitHub token',
+  'source.github.hint':     '给 github_read 用。可选 — 不填 60 次/小时,填了 5000/小时。',
+  'source.xAuth.label':     'X auth_token',
+  'source.xAuth.hint':      '给 twitter_* 用。从浏览器 devtools 拿。',
+  'source.xCt0.label':      'X ct0',
+  'source.xCt0.hint':       'X 的 csrf token。和 auth_token 配对使用。',
+  'source.btn.add':         '添加',
+  'source.btn.save':        '保存',
+  'source.btn.replace':     '替换',
+  'source.btn.forget':      '清空',
+  'source.confirmForget':   '确定要清空这个 token 吗?',
+  'source.status.set':      '已设置',
+  'source.status.unset':    '未设置',
+  'source.statusMsg.loading':'加载中…',
+  'source.empty':           '还没有数据源。点上面加一个。',
 } as const;
 
 export type DictKey = keyof typeof dict;
 
-/** Substitute {key} placeholders from a params object. */
-function substitute(s: string, params?: Record<string, string | number>) {
-  if (!params) return s;
-  return s.replace(/\{(\w+)\}/g, (_, k) =>
+/**
+ * 取中文文案。missing key 用 `!key!` 标记方便定位。
+ */
+export function t(
+  key: DictKey,
+  params?: Record<string, string | number>,
+): string {
+  const raw = dict[key];
+  if (raw === undefined) return `!missing:${key}`;
+  if (!params) return raw;
+  return raw.replace(/\{(\w+)\}/g, (_, k) =>
     k in params ? String(params[k]) : `{${k}}`,
   );
 }
 
-export function t(
-  lang: Lang,
-  key: DictKey,
-  params?: Record<string, string | number>,
-): string {
-  const row = dict[key];
-  if (!row) return `!missing:${key}`;
-  const raw = row[lang] ?? row.en;
-  return substitute(raw, params);
-}
-
-export function detectBrowserLang(): Lang {
-  if (typeof navigator === 'undefined') return DEFAULT_LANG;
-  const l = (navigator.language || '').toLowerCase();
-  return l.startsWith('zh') ? 'zh' : 'en';
-}
+export const TOOL_TRACE_STORAGE_KEY = 'vp_show_tool_trace';
