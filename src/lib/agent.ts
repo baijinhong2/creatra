@@ -34,7 +34,7 @@ export type AgentEvent =
  result: unknown;
  error?: string;
  }
- | { type:'error'; message: string }
+ | { type:'error'; message: string; code?: string }
  | { type:'done'};
 
 const MAX_ITERATIONS = 8;

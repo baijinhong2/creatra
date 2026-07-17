@@ -116,7 +116,10 @@ export async function POST(request: NextRequest) {
  const sid = await currentSessionIdServer();
  const user = await userFromSession(sid);
  if (!user) {
- return new Response('Unauthorized', { status: 401 });
+ return Response.json(
+ { error:'登录已过期,请重新登录', code:'auth_required' },
+ { status: 401 },
+ );
  }
 
  let body: RequestBody;
@@ -268,23 +271,27 @@ export async function POST(request: NextRequest) {
  persistMessage(conversationId, user.id,'assistant', event.content);
  }
  }
- controller.enqueue(encoder.encode('data: [DONE]\n\n'));
- } catch (e) {
- const err = e instanceof AuthError ?'Unauthorized': e instanceof Error ? e.message : String(e);
- const status = e instanceof AuthError ? 401 : undefined;
- const errChunk = `data: ${JSON.stringify({
- type:'error',
- message: err,
- })}\n\n`;
- try {
- controller.enqueue(encoder.encode(errChunk));
- } catch {
- // already closed
- }
- if (status === 401) {
- try { controller.close(); } catch {}
- return;
- }
+  controller.enqueue(encoder.encode('data: [DONE]\n\n'));
+  } catch (e) {
+  const isAuth = e instanceof AuthError;
+  const err = isAuth
+  ?'登录已过期,请重新登录'
+  : e instanceof Error ? e.message : String(e);
+  const status = isAuth ? 401 : undefined;
+  const errChunk = `data: ${JSON.stringify({
+  type:'error',
+  message: err,
+  code: isAuth ?'auth_required': undefined,
+  })}\n\n`;
+  try {
+  controller.enqueue(encoder.encode(errChunk));
+  } catch {
+  // already closed
+  }
+  if (status === 401) {
+  try { controller.close(); } catch {}
+  return;
+  }
  } finally {
  try {
  controller.close();

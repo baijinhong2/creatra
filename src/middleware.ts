@@ -33,11 +33,14 @@ export function middleware(req: NextRequest) {
 
  const sid = req.cookies.get(SESSION_COOKIE)?.value;
 
- if (!sid) {
- if (pathname.startsWith('/api/')) {
- return new NextResponse('Unauthorized', { status: 401 });
- }
- // HTML 页面:guest 模式放行(由客户端决定何时弹登录)
+  if (!sid) {
+  if (pathname.startsWith('/api/')) {
+  return NextResponse.json(
+  { error:'登录已过期,请重新登录', code:'auth_required' },
+  { status: 401 },
+  );
+  }
+  // HTML 页面:guest 模式放行(由客户端决定何时弹登录)
  } else {
  // 把 session id 传给下游 API 路由
  const requestHeaders = new Headers(req.headers);

@@ -76,7 +76,7 @@ type AgentEvent =
  result: unknown;
  error?: string;
  }
- | { type:'error'; message: string }
+ | { type:'error'; message: string; code?: string }
  | { type:'done'};
 
 const CONV_KEY ='vp_conversation_id';
@@ -1867,9 +1867,27 @@ export default function Home() {
  signal: controller.signal,
  });
 
- if (!res.ok || !res.body) {
- throw new Error(`Server error: ${res.status} ${res.statusText}`);
- }
+  if (!res.ok || !res.body) {
+  // 尝试解析 JSON 错误体,获取友好提示 + 触发登录 modal
+  let friendly = `服务器错误 (${res.status})`;
+  let needsLogin = false;
+  try {
+  const data = (await res.clone().json()) as { error?: string; code?: string };
+  if (data?.error) friendly = data.error;
+  if (data?.code ==='auth_required') needsLogin = true;
+  } catch {
+  // 不是 JSON,fallback 到默认消息
+  friendly = res.status === 401
+  ?'登录已过期,请重新登录'
+  : `服务器错误 (${res.status} ${res.statusText})`;
+  needsLogin = res.status === 401;
+  }
+  if (needsLogin) {
+  setCurrentUser(null);
+  openLogin();
+  }
+  throw new Error(friendly);
+  }
 
  const reader = res.body.getReader();
  const decoder = new TextDecoder();
@@ -1968,9 +1986,13 @@ export default function Home() {
  ]);
  setStreamingText('');
  break;
- case'error':
- setError(evt.message);
- break;
+  case'error':
+  if (evt.code ==='auth_required') {
+  setCurrentUser(null);
+  openLogin();
+  }
+  setError(evt.message);
+  break;
  case'done':
  break;
  }
@@ -2175,14 +2197,11 @@ export default function Home() {
 
 function EmptyState() {
   return (
-    <div className="flex flex-col items-center pt-12 text-center sm:pt-20">
-      <h1 className="text-2xl font-semibold tracking-tight text-zinc-900 sm:text-3xl">
-        你好,我是你的社交运营顾问
-      </h1>
-      <p className="mt-2 text-sm text-zinc-500">
-        {t('empty.tagline')}
-      </p>
-    </div>
+  <div className="flex flex-col items-center pt-12 text-center sm:pt-20">
+  <h1 className="text-2xl font-semibold tracking-tight text-zinc-900 sm:text-3xl">
+  你好,我是你的社交运营顾问
+  </h1>
+  </div>
   );
 }
 
@@ -2313,13 +2332,14 @@ function MessageList({
  />
  );
  }
- return (
- <div
- key={`err${i}`}
- className="rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-800">
- <strong className="font-semibold">Error:</strong> {it.text}
- </div>
- );
+  return (
+  <div
+  key={`err${i}`}
+  className="rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-800"
+  >
+  <strong className="font-semibold">出了点问题:</strong> {it.text}
+  </div>
+  );
  })}
  </div>
  );
