@@ -54,6 +54,8 @@ const dict = {
   'prompt.strategy.body':     '结合对标和我的项目,给我 3 个内容方向 + 更新频次/时段/形式的策略。',
   'prompt.daily.title':       '今天发什么',
   'prompt.daily.body':        '今天发什么推文?给我 3 条直接可发的,带配图说明。',
+  'prompt.topics.title':      '今日选题',
+  'prompt.topics.body':       '给我 5-10 个今天可以写的 X 推文选题,基于最近我关注的内容方向 + 当前热点。每个选题一句话角度 + 为什么值得写。',
   'prompt.replies.title':     '看评论 / 写回复',
   'prompt.replies.body':      '帮我看我最近推文下面的评论,哪些值得回,你给我直接能发的回复。',
   'prompt.engage.title':      '竞品互动',

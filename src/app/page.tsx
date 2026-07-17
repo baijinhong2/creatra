@@ -86,7 +86,8 @@ const CONV_KEY ='vp_conversation_id';
 // Order: skills 1-9, then 2 general.
 // 11 个能力入口 — 顺序按"用户最常用"排,top 3 默认展开,其余收起
 const SUGGESTED_PROMPT_KEYS: { title: DictKey; body: DictKey }[] = [
- { title:'prompt.daily.title', body:'prompt.daily.body'}, // 1. 今天发什么
+ { title:'prompt.topics.title', body:'prompt.topics.body'}, // 1. 今日选题(同步 /topics 页面)
+ { title:'prompt.daily.title', body:'prompt.daily.body'}, // 2. 今天发什么
  { title:'prompt.brand.title', body:'prompt.brand.body'}, // 2. 取名 + bio
  { title:'prompt.creators.title', body:'prompt.creators.body'}, // 3. 找对标博主
  { title:'prompt.replies.title', body:'prompt.replies.body'}, // 4. 看评论 / 写回复
