@@ -207,7 +207,7 @@ function Sidebar({
  <div className="flex items-center justify-between gap-2 px-3 pt-3">
   <div className="flex items-center gap-2.5 px-1.5">
   <img
-  src="/icon.svg"
+  src="/creatra-logo-256.png"
   alt="creatra"
   width={32}
   height={32}

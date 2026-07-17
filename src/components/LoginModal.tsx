@@ -74,7 +74,7 @@ export function LoginModal() {
  <div className="mb-5 flex items-center justify-between">
  <div className="flex items-center gap-2.5">
   <img
-  src="/icon.svg"
+  src="/creatra-logo-256.png"
   alt="creatra"
   width={40}
   height={40}
