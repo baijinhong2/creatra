@@ -318,6 +318,8 @@ const dict = {
   'source.xAuth.hint':      '给 twitter_* 用。从浏览器 devtools 拿。',
   'source.xCt0.label':      'X ct0',
   'source.xCt0.hint':       'X 的 csrf token。和 auth_token 配对使用。',
+  'source.tavily.label':    'Tavily API key',
+  'source.tavily.hint':     '给 web_search 用的全网搜索 API key。在 tavily.com 拿。',
   'source.btn.add':         '添加',
   'source.btn.save':        '保存',
   'source.btn.replace':     '替换',

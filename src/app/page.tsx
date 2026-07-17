@@ -147,6 +147,13 @@ const SOURCES: Source[] = [
  inputType:'text',
  },
  {
+ prefKey:'tavily.key',
+ label:'source.tavily.label',
+ placeholder:'tvly-xxx',
+ hint:'source.tavily.hint',
+ inputType:'text',
+ },
+ {
  prefKey:'x.auth_token',
  label:'source.xAuth.label',
  placeholder:'auth_token cookie value',

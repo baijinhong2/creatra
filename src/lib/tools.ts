@@ -83,11 +83,13 @@ async function tavilySearch(
  query: string,
  maxResults = 5,
 ): Promise<ToolResult> {
- const apiKey = await getCred(userId,'tavily.key','TAVILY_API_KEY');
- if (!apiKey) {
+ // Tavily key 只从 Sources 面板的 'tavily.key' 读,不再 fallback env
+ // (在 Vercel 不需要配 TAVILY_API_KEY env,全部走 in-app 配置)
+ const apiKey = await readPref(userId,'tavily.key');
+ if (typeof apiKey !=='string'|| apiKey.length === 0) {
  return {
  ok: false,
- error:'web_search is temporarily unavailable.',
+ error:'Tavily API key 没配。请在右下角 Sources 面板填 "Tavily API key"。',
  };
  }
  try {
@@ -137,11 +139,12 @@ async function tavilyImageSearch(
  query: string,
  maxResults = 6,
 ): Promise<ToolResult> {
- const apiKey = await getCred(userId,'tavily.key','TAVILY_API_KEY');
- if (!apiKey) {
+ // 同 tavilySearch: 只从 Sources 面板读 tavily.key,不再 fallback env
+ const apiKey = await readPref(userId,'tavily.key');
+ if (typeof apiKey !=='string'|| apiKey.length === 0) {
  return {
  ok: false,
- error:'web_image_search is temporarily unavailable.',
+ error:'Tavily API key 没配。请在右下角 Sources 面板填 "Tavily API key"。',
  };
  }
  try {
