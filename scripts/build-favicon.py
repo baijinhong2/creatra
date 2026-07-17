@@ -10,7 +10,7 @@ import tempfile
 from pathlib import Path
 from PIL import Image
 
-ROOT = Path("/Users/Zhuanz/Documents/project/viralpost")
+ROOT = Path("/Users/Zhuanz/Documents/project/creatra")
 SVG = ROOT / "src/app/icon.svg"
 APPLE = ROOT / "src/app/apple-icon.png"
 ICO = ROOT / "src/app/favicon.ico"

@@ -1,5 +1,5 @@
 // Verify new logo + favicon in browser tab
-import { chromium } from '/Users/Zhuanz/Documents/project/viralpost/node_modules/.pnpm/playwright@1.61.1/node_modules/playwright/index.mjs';
+import { chromium } from '/Users/Zhuanz/Documents/project/creatra/node_modules/.pnpm/playwright@1.61.1/node_modules/playwright/index.mjs';
 import { mkdirSync } from 'node:fs';
 
 const OUT = '/tmp/vp-audit/logo-v1';

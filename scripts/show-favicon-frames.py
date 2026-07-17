@@ -2,7 +2,7 @@
 from PIL import Image
 from pathlib import Path
 
-ICO = Path("/Users/Zhuanz/Documents/project/viralpost/src/app/favicon.ico")
+ICO = Path("/Users/Zhuanz/Documents/project/creatra/src/app/favicon.ico")
 OUT = Path("/tmp/vp-audit/logo-v1")
 OUT.mkdir(parents=True, exist_ok=True)
 

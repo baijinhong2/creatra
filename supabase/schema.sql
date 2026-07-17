@@ -1,5 +1,5 @@
 -- ========================================================================
--- viralpost — Supabase schema
+-- creatra — Supabase schema
 --
 -- Tables live in the `public` schema (Supabase default) but with `vp_` prefix
 -- to keep them visually distinct from drawspark tables that share this database.

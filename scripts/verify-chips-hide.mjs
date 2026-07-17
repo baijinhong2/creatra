@@ -1,7 +1,7 @@
 // Verify 11 capability chips hide once a message is sent.
 // State A: empty (guest or new conv) — chips visible
 // State B: after a message exists in conversation — chips hidden
-import { chromium } from '/Users/Zhuanz/Documents/project/viralpost/node_modules/.pnpm/playwright@1.61.1/node_modules/playwright/index.mjs';
+import { chromium } from '/Users/Zhuanz/Documents/project/creatra/node_modules/.pnpm/playwright@1.61.1/node_modules/playwright/index.mjs';
 import { mkdirSync } from 'node:fs';
 
 const PORT = 3000;
