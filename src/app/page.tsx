@@ -90,14 +90,14 @@ const SUGGESTED_PROMPT_KEYS: { title: DictKey; body: DictKey }[] = [
  { title:'prompt.xTrends.title',body:'prompt.xTrends.body'},// 2. 今日 X 热点(从 X 抓 24h 内本领域热门)
  { title:'prompt.creatorFeed.title',body:'prompt.creatorFeed.body'},// 3. 看对标动态(从关注博主抓最近推文)
  { title:'prompt.daily.title', body:'prompt.daily.body'}, // 4. 今天发什么
- { title:'prompt.brand.title', body:'prompt.brand.body'}, // 2. 取名 + bio
- { title:'prompt.creators.title', body:'prompt.creators.body'}, // 3. 找对标博主
- { title:'prompt.replies.title', body:'prompt.replies.body'}, // 4. 看评论 / 写回复
- { title:'prompt.engage.title', body:'prompt.engage.body'}, // 5. 竞品互动
- { title:'prompt.positioning.title',body:'prompt.positioning.body'},// 6. 从 0 定位账号
- { title:'prompt.strategy.title', body:'prompt.strategy.body'}, // 7. 内容更新策略
- { title:'prompt.analytics.title', body:'prompt.analytics.body'}, // 8. 我的数据
- { title:'prompt.insights.title', body:'prompt.insights.body'}, // 9. 沉淀 / 反思
+ { title:'prompt.brand.title', body:'prompt.brand.body'}, // 5. 取名 + bio
+ { title:'prompt.creators.title', body:'prompt.creators.body'}, // 6. 找对标博主
+ { title:'prompt.replies.title', body:'prompt.replies.body'}, // 7. 看评论 / 写回复
+ { title:'prompt.engage.title', body:'prompt.engage.body'}, // 8. 竞品互动
+ { title:'prompt.positioning.title',body:'prompt.positioning.body'},// 9. 从 0 定位账号
+ { title:'prompt.strategy.title', body:'prompt.strategy.body'}, // 10. 内容更新策略
+ { title:'prompt.analytics.title', body:'prompt.analytics.body'}, // 11. 我的数据
+ { title:'prompt.insights.title', body:'prompt.insights.body'}, // 12. 沉淀 / 反思
  { title:'prompt.searchNews.title', body:'prompt.searchNews.body'}, // 10. 搜全网热点
  { title:'prompt.findImage.title', body:'prompt.findImage.body'}, // 11. 找配图
 ];
