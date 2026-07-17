@@ -865,10 +865,126 @@ async function searchInsights(
  return listInsights(userId, { q: query.trim(), limit });
 }
 
+// ─── User creators watch (vp_user_creators) ───────────────────────────────
+
+/**
+ * Persist an X creator the user wants to track. Idempotent: if the handle
+ * already exists for this user, update display_name / reason / weight.
+ */
+async function rememberCreator(
+ userId: string,
+ args: {
+ handle: string;
+ display_name?: string;
+ reason?: string;
+ source?: string;
+ weight?: number;
+ },
+): Promise<ToolResult> {
+ const rawHandle = String(args.handle ??'').trim().replace(/^@+/, '');
+ if (!rawHandle) return { ok: false, error:'handle required'};
+ if (!/^[A-Za-z0-9_]{1,50}$/.test(rawHandle)) {
+ return { ok: false, error:'handle 格式不合法(只允许字母数字下划线,1-50 字符)'};
+ }
+ const source = String(args.source ??'user');
+ if (!['user','agent_suggested','auto_detected'].includes(source)) {
+ return { ok: false, error:`source must be one of: user, agent_suggested, auto_detected`};
+ }
+ const displayName = args.display_name ? String(args.display_name).trim() : null;
+ const reason = args.reason ? String(args.reason).trim() : null;
+ const weight = Math.max(1, Math.min(10, Number(args.weight ?? 1)));
+
+ const db = getDb();
+ if (!db) return { ok: false, error:'DB not available'};
+ try {
+ const r = await db.query<{ id: number; created_at: string; handle: string }>(
+ `INSERT INTO ${TABLE.userCreators} (user_id, handle, display_name, reason, source, weight)
+ VALUES ($1, $2, $3, $4, $5, $6)
+ ON CONFLICT (user_id, handle) DO UPDATE
+ SET display_name = COALESCE(EXCLUDED.display_name, ${TABLE.userCreators}.display_name),
+ reason = COALESCE(EXCLUDED.reason, ${TABLE.userCreators}.reason),
+ source = EXCLUDED.source,
+ weight = EXCLUDED.weight,
+ updated_at = now()
+ RETURNING id, created_at, handle`,
+ [userId, rawHandle, displayName, reason, source, weight],
+ );
+ return {
+ ok: true,
+ data: {
+ handle: r.rows[0].handle,
+ id: r.rows[0].id,
+ created_at: r.rows[0].created_at,
+ action: r.rows[0]?.id ?'saved_or_updated': null,
+ },
+ };
+ } catch (e) {
+ return { ok: false, error: e instanceof Error ? e.message : String(e) };
+ }
+}
+
+/**
+ * List creators the user is watching. Sorted by weight desc, then most recent.
+ */
+async function listCreators(
+ userId: string,
+ options: { limit?: number; source?: string } = {},
+): Promise<ToolResult> {
+ const limit = Math.max(1, Math.min(100, Number(options.limit ?? 50)));
+ const db = getDb();
+ if (!db) return { ok: false, error:'DB not available'};
+ try {
+ const r = await db.query<{
+ id: number;
+ handle: string;
+ display_name: string | null;
+ reason: string | null;
+ source: string;
+ weight: number;
+ created_at: string;
+ }>(
+ `SELECT id, handle, display_name, reason, source, weight, created_at
+ FROM ${TABLE.userCreators}
+ WHERE user_id = $1
+ ORDER BY weight DESC, created_at DESC
+ LIMIT $2`,
+ [userId, limit],
+ );
+ return { ok: true, data: { creators: r.rows, count: r.rows.length } };
+ } catch (e) {
+ return { ok: false, error: e instanceof Error ? e.message : String(e) };
+ }
+}
+
+/**
+ * Remove a creator from the watch list.
+ */
+async function forgetCreator(
+ userId: string,
+ handle: string,
+): Promise<ToolResult> {
+ const rawHandle = String(handle ??'').trim().replace(/^@+/, '');
+ if (!rawHandle) return { ok: false, error:'handle required'};
+ const db = getDb();
+ if (!db) return { ok: false, error:'DB not available'};
+ try {
+ const r = await db.query<{ rowCount: number }>(
+ `DELETE FROM ${TABLE.userCreators} WHERE user_id = $1 AND handle = $2`,
+ [userId, rawHandle],
+ );
+ if (r.rowCount === 0) {
+ return { ok: false, error:`未找到 @${rawHandle} 在你的关注列表中`};
+ }
+ return { ok: true, data: { handle: rawHandle, removed: true } };
+ } catch (e) {
+ return { ok: false, error: e instanceof Error ? e.message : String(e) };
+ }
+}
+
 // ─── Tool registry (definitions + dispatch) ───────────────────────────────
 
 export type ToolName =
- |'web_search'|'web_image_search'|'github_read'|'twitter_search'|'twitter_get_user_tweets'|'twitter_get_tweet_replies'|'twitter_get_tweet_metrics'|'twitter_get_mentions'|'suggest_similar_creators'|'remember_preference'|'read_preferences'|'save_insight'|'list_insights'|'delete_insight'|'search_insights';
+ |'web_search'|'web_image_search'|'github_read'|'twitter_search'|'twitter_get_user_tweets'|'twitter_get_tweet_replies'|'twitter_get_tweet_metrics'|'twitter_get_mentions'|'suggest_similar_creators'|'remember_preference'|'read_preferences'|'save_insight'|'list_insights'|'delete_insight'|'search_insights'|'remember_creator'|'list_creators'|'forget_creator';
 
 export const TOOL_DEFINITIONS: ToolDefinition[] = [
  {
@@ -983,25 +1099,62 @@ export const TOOL_DEFINITIONS: ToolDefinition[] = [
  required: ['account_context'],
  },
  },
- {
- name:'remember_preference',
- description:"Persist a key/value pair the user wants the agent to remember across sessions. Use when the user shares a personal fact, position, or credential. For secrets (tokens, API keys), use keys ending in'.token','.key', or'.secret'— values will be redacted in logs and in subsequent read_preferences calls.",
- parameters: {
- type:'object',
- properties: {
- key: {
- type:'string',
- description:"Lowercase dot-separated key, e.g.'github.token','x.auth_token','account.niche'",
- },
- value: {
- type:'string',
- description:'Value to store (string for most cases)',
- },
- },
- required: ['key','value'],
- },
- },
- {
+  {
+  name:'remember_preference',
+  description:"Persist a key/value pair the user wants the agent to remember across sessions. Use when the user shares a personal fact, position, or credential. For secrets (tokens, API keys), use keys ending in'.token','.key', or'.secret'— values will be redacted in logs and in subsequent read_preferences calls.",
+  parameters: {
+  type:'object',
+  properties: {
+  key: {
+  type:'string',
+  description:"Lowercase dot-separated key, e.g.'github.token','x.auth_token','account.niche'",
+  },
+  value: {
+  type:'string',
+  description:'Value to store (string for most cases)',
+  },
+  },
+  required: ['key','value'],
+  },
+  },
+  {
+  name:'remember_creator',
+  description:"Add an X creator to the user's watch list. Use this when the user mentions they like, follow, benchmark, or frequently reference a specific X handle. Idempotent — calling again with the same handle updates display_name/reason/weight. The watch list is what the '看对标动态' chip uses to fetch their latest tweets.",
+  parameters: {
+  type:'object',
+  properties: {
+  handle: { type:'string', description:"X handle without @, e.g.'naval'"},
+  display_name: { type:'string', description:'Optional real name, e.g. "Naval Ravikant"'},
+  reason: { type:'string', description:"Why the user tracks this creator, e.g.'我的对标,深度思考型'"},
+  source: { type:'string', description:"'user'(explicitly told by user) / 'agent_suggested'(from suggest_similar_creators and user accepted) / 'auto_detected'(from conversation). Default 'user'."},
+  weight: { type:'string', description:'Priority 1-10, default 1. Higher = more important.'},
+  },
+  required: ['handle'],
+  },
+  },
+  {
+  name:'list_creators',
+  description:"List the X creators the user is watching, sorted by weight desc. Use to see what the '看对标动态' chip will fetch from. Returns handle, display_name, reason, source, weight.",
+  parameters: {
+  type:'object',
+  properties: {
+  limit: { type:'string', description:'Max results, default 50'},
+  source: { type:'string', description:'Optional filter by source'},
+  },
+  },
+  },
+  {
+  name:'forget_creator',
+  description:"Remove an X creator from the user's watch list. Use when the user says '不要看 @xxx 了' or '把 @xxx 从关注列表里删了'.",
+  parameters: {
+  type:'object',
+  properties: {
+  handle: { type:'string', description:"X handle without @, e.g.'naval'"},
+  },
+  required: ['handle'],
+  },
+  },
+  {
  name:'read_preferences',
  description:"Read stored preferences. You SHOULD pass `scopes` (one of:'account','voice','projects','insights','tools','episodic') so the system only returns the memories relevant to what you're doing — not the whole KV store. You may also pass `keys` for a specific list. Each scope has a clear purpose:'account'= who/what the account is,'voice'= how to write,'projects'= what user is building,'insights'= user's accumulated thinking (use list_insights for that),'tools'= credentials and tokens,'episodic'= past events. Calling this also updates the last_used_at timestamp on the returned rows — that's how memories stay'fresh'vs.'cold'.",
  parameters: {
@@ -1142,8 +1295,23 @@ export async function runTool(
  String(args.account_context ??''),
  (args.language as'zh'|'en') ??'zh',
  );
- case'remember_preference':
- return rememberPreference(userId, String(args.key ??''), args.value);
+  case'remember_preference':
+  return rememberPreference(userId, String(args.key ??''), args.value);
+  case'remember_creator':
+  return rememberCreator(userId, {
+  handle: String(args.handle ??''),
+  display_name: args.display_name as string | undefined,
+  reason: args.reason as string | undefined,
+  source: args.source as string | undefined,
+  weight: args.weight !== undefined ? Number(args.weight) : undefined,
+  });
+  case'list_creators':
+  return listCreators(userId, {
+  limit: args.limit !== undefined ? Number(args.limit) : undefined,
+  source: args.source as string | undefined,
+  });
+  case'forget_creator':
+  return forgetCreator(userId, String(args.handle ??''));
  case'read_preferences':
  return readPreferencesTool(userId, {
  keys: Array.isArray(args.keys)

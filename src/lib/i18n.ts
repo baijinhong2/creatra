@@ -57,6 +57,8 @@ const dict = {
   'prompt.topics.body':       '给我 5-10 个今天可以写的 X 推文选题,基于最近我关注的内容方向 + 当前热点。每个选题一句话角度 + 为什么值得写。',
   'prompt.xTrends.title':     '今日 X 热点',
   'prompt.xTrends.body':      '用 twitter_search 抓 X 上最近 24 小时跟我所在领域相关的热门事件/讨论。先从我 voice DNA 的关键词/方向里挑 3-5 个搜索词,每个搜最近 24h 内的英文推文,挑出点赞/转发最多的,聚类成 5-8 个热点话题。每个热点:一句话总结 + 1-2 条代表性推文链接 + 我可以怎么蹭的角度。',
+  'prompt.creatorFeed.title': '看对标动态',
+  'prompt.creatorFeed.body':  '用 list_creators 拿到我关注的博主列表(按 weight 排,默认前 5 个),然后对每个博主调 twitter_get_user_tweets(username=handle, count=10) 抓他们最近的推文(默认每个 10 条)。把所有推文按时间线倒序排(最新在前),每条给我:博主 handle + 推文时间 + 核心观点(一句话) + 互动数(赞转评) + 推文 URL。如果某条下面有重要评论,可以再用 twitter_get_tweet_replies(tweet_id) 看 5-10 条主评论,提炼分歧/共鸣。**默认 10 条/博主**——如果我说"更多"或"再来 10 条",就对同一批博主再调一次 twitter_get_user_tweets(count=20) 取第 11-20 条。注意:数据量可能很大,分批慢慢给,不要一次塞太多导致超时。',
   'prompt.replies.title':     '看评论 / 写回复',
   'prompt.replies.body':      '帮我看我最近推文下面的评论,哪些值得回,你给我直接能发的回复。',
   'prompt.engage.title':      '竞品互动',

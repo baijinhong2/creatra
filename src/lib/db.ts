@@ -51,9 +51,10 @@ export const TABLE = {
  insights:'vp_insights',
  // v0.7+
  voiceDna:'vp_voice_dna',
- userTweets:'vp_user_tweets',
- replyInbox:'vp_reply_inbox',
- mentionInbox:'vp_mention_inbox',
+  userTweets:'vp_user_tweets',
+  userCreators:'vp_user_creators',
+  replyInbox:'vp_reply_inbox',
+  mentionInbox:'vp_mention_inbox',
  topicRecommendations:'vp_topic_recommendations',
  healthReports:'vp_health_reports',
  dismissedInsights:'vp_dismissed_insights',
