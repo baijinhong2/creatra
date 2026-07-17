@@ -40,7 +40,6 @@ const dict = {
   // ── Empty state ──────────────────────────────────────────
   'empty.greeting':     '你好 — 我是你的 X 运营合伙人。',
   'empty.body':         '我专门做 X 账号运营,9 项核心能力 + 2 个通用工具:定位挖掘 · 用户名/bio · 对标博主 · 内容策略 · 每日推文 · 评论回复 · 竞品互动 · 数据分析 · 沉淀梳理;外加搜全网热点、找推文配图。挑一个起点,或者直接说要啥。',
-  'empty.tagline':      '你的 X 运营合伙人 · 9 项能力 + 2 个通用工具',
   'empty.skillsHint':   '所有能力 →',
 
   // ── Suggested prompts (11 项能力入口) ──────────────────────
@@ -56,6 +55,8 @@ const dict = {
   'prompt.daily.body':        '今天发什么推文?给我 3 条直接可发的,带配图说明。',
   'prompt.topics.title':      '今日选题',
   'prompt.topics.body':       '给我 5-10 个今天可以写的 X 推文选题,基于最近我关注的内容方向 + 当前热点。每个选题一句话角度 + 为什么值得写。',
+  'prompt.xTrends.title':     '今日 X 热点',
+  'prompt.xTrends.body':      '用 twitter_search 抓 X 上最近 24 小时跟我所在领域相关的热门事件/讨论。先从我 voice DNA 的关键词/方向里挑 3-5 个搜索词,每个搜最近 24h 内的英文推文,挑出点赞/转发最多的,聚类成 5-8 个热点话题。每个热点:一句话总结 + 1-2 条代表性推文链接 + 我可以怎么蹭的角度。',
   'prompt.replies.title':     '看评论 / 写回复',
   'prompt.replies.body':      '帮我看我最近推文下面的评论,哪些值得回,你给我直接能发的回复。',
   'prompt.engage.title':      '竞品互动',
