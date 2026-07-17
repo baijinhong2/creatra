@@ -139,18 +139,11 @@ type Source = {
 };
 
 const SOURCES: Source[] = [
- {
+  {
  prefKey:'x.handle',
  label:'source.xHandle.label',
  placeholder:'你的 X 账号 handle(不带 @),如 naval',
  hint:'source.xHandle.hint',
- inputType:'text',
- },
- {
- prefKey:'tavily.key',
- label:'source.tavily.label',
- placeholder:'tvly-xxx',
- hint:'source.tavily.hint',
  inputType:'text',
  },
  {

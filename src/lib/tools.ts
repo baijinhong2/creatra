@@ -83,13 +83,13 @@ async function tavilySearch(
  query: string,
  maxResults = 5,
 ): Promise<ToolResult> {
- // Tavily key 只从 Sources 面板的 'tavily.key' 读,不再 fallback env
- // (在 Vercel 不需要配 TAVILY_API_KEY env,全部走 in-app 配置)
- const apiKey = await readPref(userId,'tavily.key');
- if (typeof apiKey !=='string'|| apiKey.length === 0) {
+ // Tavily key 是 site-wide 配置,从环境变量 TAVILY_API_KEY 读(用户在 Vercel 配)
+ // (不是 per-user 配置,不要放 Sources 面板)
+ const apiKey = process.env.TAVILY_API_KEY;
+ if (!apiKey) {
  return {
  ok: false,
- error:'Tavily API key 没配。请在右下角 Sources 面板填 "Tavily API key"。',
+ error:'web_search is temporarily unavailable (TAVILY_API_KEY not set in env).',
  };
  }
  try {
@@ -139,12 +139,12 @@ async function tavilyImageSearch(
  query: string,
  maxResults = 6,
 ): Promise<ToolResult> {
- // 同 tavilySearch: 只从 Sources 面板读 tavily.key,不再 fallback env
- const apiKey = await readPref(userId,'tavily.key');
- if (typeof apiKey !=='string'|| apiKey.length === 0) {
+ // 同 tavilySearch: site-wide,环境变量 TAVILY_API_KEY
+ const apiKey = process.env.TAVILY_API_KEY;
+ if (!apiKey) {
  return {
  ok: false,
- error:'Tavily API key 没配。请在右下角 Sources 面板填 "Tavily API key"。',
+ error:'web_image_search is temporarily unavailable (TAVILY_API_KEY not set in env).',
  };
  }
  try {
