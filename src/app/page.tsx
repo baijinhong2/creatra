@@ -190,7 +190,7 @@ function Sidebar({
   showToolTrace: boolean;
   setShowToolTrace: (v: boolean) => void;
 }) {
- const { openLogin } = useAuthModal();
+  const { openLogin, authReady: authChecked } = useAuthModal();
  const [openPanel, setOpenPanel] = useState<null |'sources'|'insights'|'memories'>(null);
 
  // Inline sidebar colors (no Tailwind) — keeps the colors consistent
@@ -1812,13 +1812,20 @@ export default function Home() {
  el.style.height = `${Math.min(el.scrollHeight, 220)}px`;
  }, [input]);
 
- const send = useCallback(
- async (text: string) => {
- const trimmed = text.trim();
- if (!trimmed || status ==='streaming') return;
+  const send = useCallback(
+  async (text: string) => {
+  const trimmed = text.trim();
+  if (!trimmed || status ==='streaming') return;
 
- setError(null);
- setToolCalls([]);
+  // 未登录:不发送,直接弹登录 modal(避免 401 + 错误提示的不友好流程)
+  if (!authChecked) return;
+  if (!currentUser) {
+  openLogin();
+  return;
+  }
+
+  setError(null);
+  setToolCalls([]);
 
  const userMsg: DisplayMessage = {
  id: `user_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`,
