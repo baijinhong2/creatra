@@ -1936,9 +1936,9 @@ export default function Home() {
  abortRef.current = null;
  }
  },
- // eslint-disable-next-line react-hooks/exhaustive-deps
- [messages, status],
- );
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  [messages, status, currentUser, authChecked, openLogin, setCurrentUser],
+  );
 
  const handleAgentEvent = useCallback(
  (evt: AgentEvent, streamId: string) => {
