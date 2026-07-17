@@ -310,6 +310,8 @@ const dict = {
   'memories.confirmDelete': '确定要删除这条记忆吗?',
 
   // ── Source / API key panel ───────────────────────────────
+  'source.xHandle.label':   '自己的 X 账号',
+  'source.xHandle.hint':    '填你的 X 账号 handle(不带 @)。所有需要看"你自己的 X 账号"数据的功能都从这里调用:看评论、我的数据、互动复盘、内容策略等。配合下面的 X cookies 一起用。',
   'source.github.label':    'GitHub token',
   'source.github.hint':     '给 github_read 用。可选 — 不填 60 次/小时,填了 5000/小时。',
   'source.xAuth.label':     'X auth_token',

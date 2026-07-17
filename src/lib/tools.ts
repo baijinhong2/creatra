@@ -1037,8 +1037,8 @@ export const TOOL_DEFINITIONS: ToolDefinition[] = [
  },
  },
  {
- name:'twitter_get_user_tweets',
- description:"Fetch the most recent tweets of a given X user. Use to study a benchmark account's recent content. For the user's own tweets, read their handle from preferences'x.handle'and call this with that handle — the response includes impressions/likes/reposts/replies metrics on each tweet which skill 8 (analysis) needs. Requires X cookies in preferences.",
+  name:'twitter_get_user_tweets',
+  description:"Fetch the most recent tweets of a given X user. Use to study a benchmark account's recent content. For the user's OWN tweets, read their handle from Sources panel ('自己的 X 账号' / x.handle key) and call this with that handle — the response includes impressions/likes/reposts/replies metrics on each tweet which skill 8 (analysis) needs. Requires X cookies in preferences.",
  parameters: {
  type:'object',
  properties: {

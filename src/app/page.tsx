@@ -134,14 +134,17 @@ type Source = {
  label: DictKey;
  placeholder: string;
  hint: DictKey;
+ /** 'text' 显示明文(公开信息,如 handle)/ 'password' 隐藏(敏感 token) */
+ inputType?:'text'|'password';
 };
 
 const SOURCES: Source[] = [
  {
- prefKey:'github.token',
- label:'source.github.label',
- placeholder:'ghp_xxx or gho_xxx',
- hint:'source.github.hint',
+ prefKey:'x.handle',
+ label:'source.xHandle.label',
+ placeholder:'你的 X 账号 handle(不带 @),如 naval',
+ hint:'source.xHandle.hint',
+ inputType:'text',
  },
  {
  prefKey:'x.auth_token',
@@ -154,6 +157,12 @@ const SOURCES: Source[] = [
  label:'source.xCt0.label',
  placeholder:'ct0 cookie value',
  hint:'source.xCt0.hint',
+ },
+ {
+ prefKey:'github.token',
+ label:'source.github.label',
+ placeholder:'ghp_xxx or gho_xxx',
+ hint:'source.github.hint',
  },
 ];
 
@@ -529,64 +538,71 @@ function SourcesPanel() {
 
  return (
  <div className="space-y-2">
- {SOURCES.map((src) => {
- const pref = prefMap.get(src.prefKey);
- const isSet = pref?.has_value ?? false;
- const isEditing = editingKey === src.prefKey;
- const isSaving = savingKey === src.prefKey;
- return (
- <div key={src.prefKey} className="rounded-lg border border-zinc-200 bg-white p-2">
- <div className="mb-1 flex items-center justify-between">
- <span className="text-xs font-medium text-zinc-700">
- {t(src.label)}
- </span>
- <span
- className={`text-xs ${
- isSet ?'text-emerald-600':'text-zinc-400'}`}
- >
- {isSet ? t('source.status.set') : t('source.status.unset')}
- </span>
- </div>
- {isEditing ? (
- <div className="flex gap-1">
- <input
- type="password"value={editingValue}
- onChange={(e) => setEditingValue(e.target.value)}
- placeholder={src.placeholder}
- className="flex-1 rounded border border-zinc-200 bg-white px-2 py-1 font-mono text-xs text-zinc-900 placeholder:text-zinc-400 focus:border-amber-400 focus:outline-none"autoFocus
- />
- <button
- onClick={() => save(src.prefKey, editingValue)}
- disabled={isSaving || !editingValue}
- className="rounded bg-amber-400 px-2 py-1 text-xs font-medium text-zinc-900 hover:bg-amber-500 disabled:opacity-40">
- {isSaving ?'…': t('source.btn.save')}
- </button>
- </div>
- ) : (
- <div className="flex gap-1">
- <code className="flex-1 truncate rounded border border-zinc-200 bg-zinc-50 px-2 py-1 font-mono text-xs text-zinc-500">
- {isSet ? src.prefKey : t('source.empty', { key: src.prefKey })}
- </code>
- <button
- onClick={() => {
- setEditingKey(src.prefKey);
- setEditingValue('');
- }}
- className="rounded bg-zinc-100 px-2 py-1 text-xs text-zinc-600 hover:bg-zinc-200">
- {isSet ? t('source.btn.replace') : t('source.btn.add')}
- </button>
- {isSet && (
- <button
- onClick={() => forget(src.prefKey)}
- className="rounded bg-zinc-100 px-2 py-1 text-xs text-zinc-500 hover:bg-red-100 hover:text-red-700">
- {t('source.btn.forget')}
- </button>
- )}
- </div>
- )}
- </div>
- );
- })}
+  {SOURCES.map((src) => {
+  const pref = prefMap.get(src.prefKey);
+  const isSet = pref?.has_value ?? false;
+  const isEditing = editingKey === src.prefKey;
+  const isSaving = savingKey === src.prefKey;
+  const inputType = src.inputType ?? 'password';
+  return (
+  <div key={src.prefKey} className="rounded-lg border border-zinc-200 bg-white p-2">
+  <div className="mb-1 flex items-center justify-between">
+  <span className="text-xs font-medium text-zinc-700">
+  {t(src.label)}
+  </span>
+  <span
+  className={`text-xs ${
+  isSet ?'text-emerald-600':'text-zinc-400'}`}
+  >
+  {isSet ? t('source.status.set') : t('source.status.unset')}
+  </span>
+  </div>
+  {isEditing ? (
+  <div className="flex gap-1">
+  <input
+  type={inputType}value={editingValue}
+  onChange={(e) => setEditingValue(e.target.value)}
+  placeholder={src.placeholder}
+  className="flex-1 rounded border border-zinc-200 bg-white px-2 py-1 font-mono text-xs text-zinc-900 placeholder:text-zinc-400 focus:border-amber-400 focus:outline-none"autoFocus
+  />
+  <button
+  onClick={() => save(src.prefKey, editingValue)}
+  disabled={isSaving || !editingValue}
+  className="rounded bg-amber-400 px-2 py-1 text-xs font-medium text-zinc-900 hover:bg-amber-500 disabled:opacity-40">
+  {isSaving ?'…': t('source.btn.save')}
+  </button>
+  </div>
+  ) : (
+  <div className="flex gap-1">
+  <code className={`flex-1 truncate rounded border border-zinc-200 px-2 py-1 font-mono text-xs ${
+  isSet
+  ? (inputType ==='text'? 'bg-amber-50 text-zinc-900':'bg-zinc-50 text-zinc-500')
+  :'bg-zinc-50 text-zinc-400'
+  }`}>
+  {isSet
+  ? (inputType ==='text' && pref?.value ? String(pref.value) : `${src.prefKey} ●●●●`)
+  : t('source.empty', { key: src.prefKey })}
+  </code>
+  <button
+  onClick={() => {
+  setEditingKey(src.prefKey);
+  setEditingValue(isSet && inputType ==='text' && pref?.value ? String(pref.value) : '');
+  }}
+  className="rounded bg-zinc-100 px-2 py-1 text-xs text-zinc-600 hover:bg-zinc-200">
+  {isSet ? t('source.btn.replace') : t('source.btn.add')}
+  </button>
+  {isSet && (
+  <button
+  onClick={() => forget(src.prefKey)}
+  className="rounded bg-zinc-100 px-2 py-1 text-xs text-zinc-500 hover:bg-red-100 hover:text-red-700">
+  {t('source.btn.forget')}
+  </button>
+  )}
+  </div>
+  )}
+  </div>
+  );
+  })}
  </div>
  );
 }
