@@ -1,5 +1,6 @@
 /**
- * Edge middleware: cookie pass-through for API routes.
+ * Edge proxy: cookie pass-through for API routes.
+ * (Next.js 16 renamed `middleware.ts` → `proxy.ts`; API is the same.)
  *
  * 设计:HTML 页面允许未登录访问(guest 模式),只有 API 路由在没 session 时返回 401。
  * 客户端的 useAuthModal / page.tsx 决定何时弹登录 modal。
@@ -27,7 +28,7 @@ function isAlwaysPublic(pathname: string): boolean {
  return false;
 }
 
-export function middleware(req: NextRequest) {
+export function proxy(req: NextRequest) {
  const { pathname } = req.nextUrl;
  if (isAlwaysPublic(pathname)) return NextResponse.next();
 

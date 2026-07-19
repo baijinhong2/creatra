@@ -2,7 +2,7 @@
  * Auth helpers: password hashing, session creation, current-user lookup.
  *
  * Sessions are opaque random tokens stored in `vp_sessions` and tracked via
- * a HttpOnly cookie. The middleware looks up the session for every request
+ * a HttpOnly cookie. The proxy looks up the session for every request
  * and forwards the user id to API routes via the `x-vp-user-id` header.
  *
  * No JWTs — sessions are revocable (just DELETE the row) and one less dep.
@@ -207,7 +207,7 @@ export async function userFromSession(
  };
 }
 
-/** Read user id from the request headers that middleware sets. */
+/** Read user id from the request headers that proxy sets. */
 export function userIdFromHeaders(headers: Headers): string | null {
  return headers.get(USER_HEADER);
 }

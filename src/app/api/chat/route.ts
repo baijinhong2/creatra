@@ -112,7 +112,7 @@ async function persistMessage(
 }
 
 export async function POST(request: NextRequest) {
- // Auth: pull the user from the session set by middleware.
+  // Auth: pull the user from the session set by proxy.
  const sid = await currentSessionIdServer();
  const user = await userFromSession(sid);
  if (!user) {
