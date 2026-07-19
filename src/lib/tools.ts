@@ -220,75 +220,125 @@ async function githubRead(
 }
 
 async function twitterApi(
- userId: string,
- endpoint:'search'|'user-tweets',
- params: Record<string, string>,
+  userId: string,
+  endpoint:'search'|'user-tweets',
+  params: Record<string, string>,
 ): Promise<ToolResult> {
- const authToken = await getCred(userId,'x.auth_token','X_AUTH_TOKEN');
- const ct0 = await getCred(userId,'x.ct0','X_CT0');
- if (!authToken || !ct0) {
- return {
- ok: false,
- error:'X cookies not configured. Tell the user to add X_AUTH_TOKEN + X_CT0 in Sources, or via remember_preference(key="x.auth_token"/"x.ct0", value=...).',
- };
- }
+  const authToken = await getCred(userId,'x.auth_token','X_AUTH_TOKEN');
+  const ct0 = await getCred(userId,'x.ct0','X_CT0');
+  if (!authToken || !ct0) {
+  return {
+  ok: false,
+  error:'X cookies not configured. Tell the user to add X_AUTH_TOKEN + X_CT0 in Sources, or via remember_preference(key="x.auth_token"/"x.ct0", value=...).',
+  };
+  }
 
- const headers: Record<string, string> = {'User-Agent':'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/129.0.0.0 Safari/537.36',
- Authorization:'Bearer AAAAAAAAAAAAAAAAAAAAANRILgAAAAAAnNwIzUejRCOuH5E6I8xnZz4puTs=1Zv7ttfk8LF81IUq16cHjhLTvJu4FA33AGWWjCpTnA',
- Cookie: `auth_token=${authToken}; ct0=${ct0}`,'X-Csrf-Token': ct0,'X-Twitter-Auth-Type':'OAuth2Session','Content-Type':'application/json',
- };
+  const headers: Record<string, string> = {'User-Agent':'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/129.0.0.0 Safari/537.36',
+  Authorization:'Bearer AAAAAAAAAAAAAAAAAAAAANRILgAAAAAAnNwIzUejRCOuH5E6I8xnZz4puTs=1Zv7ttfk8LF81IUq16cHjhLTvJu4FA33AGWWjCpTnA',
+  Cookie: `auth_token=${authToken}; ct0=${ct0}`,'X-Csrf-Token': ct0,'X-Twitter-Auth-Type':'OAuth2Session','Content-Type':'application/json',
+  };
 
- try {
- let data: unknown;
- if (endpoint ==='user-tweets') {
- const username = params.username;
- if (!username) return { ok: false, error:'username required'};
- const userIdRes = await fetch(
- `https://api.twitter.com/graphql/G3KGOASz96M-Qu0nwmGXNg/UserByScreenName?variables=${encodeURIComponent(
- JSON.stringify({ screen_name: username, withSafetyModeUserFields: true }),
- )}`,
- { headers, signal: AbortSignal.timeout(10000) },
- );
- const userIdJson = (await userIdRes.json()) as {
- data?: { user?: { result?: { rest_id?: string } } };
- };
- const restId = userIdJson.data?.user?.result?.rest_id;
- if (!restId) return { ok: false, error:'User not found'};
+  try {
+  let data: unknown;
+  if (endpoint ==='user-tweets') {
+  const username = params.username;
+  if (!username) return { ok: false, error:'username required'};
+  const userIdRes = await fetch(
+  `https://api.twitter.com/graphql/G3KGOASz96M-Qu0nwmGXNg/UserByScreenName?variables=${encodeURIComponent(
+  JSON.stringify({ screen_name: username, withSafetyModeUserFields: true }),
+  )}`,
+  { headers, signal: AbortSignal.timeout(10000) },
+  );
+  const userIdJson = await safeParseJson(userIdRes, 'UserByScreenName');
+  if (!userIdJson.ok) return userIdJson;
+  const restId = (userIdJson.data as { data?: { user?: { result?: { rest_id?: string } } } })?.data?.user?.result?.rest_id;
+  if (!restId) return { ok: false, error:'User not found'};
 
- const tweetsRes = await fetch(
- `https://api.twitter.com/graphql/E3opETHurmVJflFsUBVuQ/UserTweets?variables=${encodeURIComponent(
- JSON.stringify({
- userId: restId,
- count: Number(params.count ?? 10),
- includePromotedContent: false,
- withQuickPromoteEligibilityTweetFields: true,
- withVoice: true,
- withV2Timeline: true,
- }),
- )}`,
- { headers, signal: AbortSignal.timeout(10000) },
- );
- data = await tweetsRes.json();
- } else {
- const query = params.query;
- if (!query) return { ok: false, error:'query required'};
- const searchRes = await fetch(
- `https://api.twitter.com/graphql/gkjsKepM6gl_HmFWoWKfgg/SearchTimeline?variables=${encodeURIComponent(
- JSON.stringify({
- rawQuery: query,
- count: Number(params.count ?? 20),
- querySource:'typed_query',
- product:'Latest',
- }),
- )}`,
- { headers, signal: AbortSignal.timeout(10000) },
- );
- data = await searchRes.json();
- }
- return { ok: true, data };
- } catch (e) {
- return { ok: false, error: e instanceof Error ? e.message : String(e) };
- }
+  const tweetsRes = await fetch(
+  `https://api.twitter.com/graphql/E3opETHurmVJflFsUBVuQ/UserTweets?variables=${encodeURIComponent(
+  JSON.stringify({
+  userId: restId,
+  count: Number(params.count ?? 10),
+  includePromotedContent: false,
+  withQuickPromoteEligibilityTweetFields: true,
+  withVoice: true,
+  withV2Timeline: true,
+  }),
+  )}`,
+  { headers, signal: AbortSignal.timeout(10000) },
+  );
+  data = (await safeParseJson(tweetsRes, 'UserTweets')).data;
+  } else {
+  const query = params.query;
+  if (!query) return { ok: false, error:'query required'};
+  const searchRes = await fetch(
+  `https://api.twitter.com/graphql/gkjsKepM6gl_HmFWoWKfgg/SearchTimeline?variables=${encodeURIComponent(
+  JSON.stringify({
+  rawQuery: query,
+  count: Number(params.count ?? 20),
+  querySource:'typed_query',
+  product:'Latest',
+  }),
+  )}`,
+  { headers, signal: AbortSignal.timeout(10000) },
+  );
+  const parsed = await safeParseJson(searchRes,'SearchTimeline');
+  if (!parsed.ok) return parsed;
+  data = parsed.data;
+  }
+  return { ok: true, data };
+  } catch (e) {
+  return { ok: false, error: e instanceof Error ? e.message : String(e) };
+  }
+}
+
+/**
+ * Robust response parser — distinguishes "X returned non-JSON" (HTML challenge,
+ * empty body, network drop) from "X returned a real auth/permission error".
+ * Without this, every X failure looks the same ("Unexpected token < in JSON"),
+ * so the agent can't tell if cookies are bad, X is blocking the Vercel IP, or
+ * the request just timed out.
+ */
+async function safeParseJson(
+  res: Response,
+  endpoint: string,
+): Promise<ToolResult & { data?: unknown }> {
+  const status = res.status;
+  // 1. Read raw body first — we need it either way.
+  const raw = await res.text().catch(() =>'<body unreadable>');
+  const truncated = raw.slice(0, 300).replace(/\s+/g,' ').trim();
+
+  if (!res.ok) {
+  // 2a. HTTP error (401 / 403 / 429 / 5xx). Surface status + body excerpt.
+  let hint ='';
+  if (status === 401 || status === 403) {
+  hint = ' (cookies likely expired/invalid — re-extract auth_token + ct0 from x.com)';
+  } else if (status === 429) {
+  hint = ' (X rate-limited this IP — likely the Vercel datacenter IP is being throttled)';
+  } else if (status >= 500) {
+  hint = ' (X server error)';
+  }
+  return {
+  ok: false,
+  error: `X ${endpoint} returned HTTP ${status}${hint}. Body: ${truncated}`,
+  };
+  }
+
+  // 2b. Status 200 but body is not JSON. The most common cause on Vercel is
+  //     X serving an HTML anti-bot challenge page to datacenter IPs.
+  try {
+  const data = JSON.parse(raw);
+  return { ok: true, data };
+  } catch {
+  const looksLikeHtml = /^<(!doctype|html)/i.test(raw.trim());
+  const hint = looksLikeHtml
+  ? ' (X returned an HTML page — likely an anti-bot challenge; Vercel datacenter IP is being challenged, not a cookies problem)'
+  : ' (X returned non-JSON content)';
+  return {
+  ok: false,
+  error: `X ${endpoint} HTTP 200 but body is not JSON${hint}. Body: ${truncated}`,
+  };
+  }
 }
 
 /**
@@ -702,14 +752,125 @@ function redactRows(
  confidence: row.confidence,
  value: isSecretKey
  ? row.value
- ?'[REDACTED: set]':'[not set]': row.value,
- last_used_at: row.last_used_at ? String(row.last_used_at) : null,
- last_confirmed_at: String(row.last_confirmed_at),
- };
- });
-}
+  ?'[REDACTED: set]':'[not set]': row.value,
+  last_used_at: row.last_used_at ? String(row.last_used_at) : null,
+  last_confirmed_at: String(row.last_confirmed_at),
+  };
+  });
+ }
 
-// ─── Insights (user-accumulated content) ──────────────────────────────────
+ /**
+ * Self-test the user's X cookies against a known-good X API endpoint.
+ * Returns a structured diagnosis the agent (or user) can read directly:
+ * - "not configured" → no cookies in preferences, user needs to set them
+ * - "ok" → cookies are working, X returned real data
+ * - "auth expired" → X returned 401/403, cookies were valid at some point but
+ *   X rotated the session; user must re-extract auth_token + ct0 from x.com
+ * - "rate limited" → X is throttling this IP (Vercel datacenter IP, expected
+ *   on free tier); cookies themselves are fine, just try again later or rotate
+ * - "anti-bot challenge" → X returned HTML instead of JSON; Vercel's IP is
+ *   being challenged. Cookies are fine; the X integration will not work from
+ *   Vercel. Solutions: deploy on a residential proxy, or self-host.
+ * - "network/timeout" → fetch didn't even get a response
+ */
+async function verifyXCredentials(userId: string): Promise<ToolResult> {
+  const authToken = await getCred(userId,'x.auth_token','X_AUTH_TOKEN');
+  const ct0 = await getCred(userId,'x.ct0','X_CT0');
+  if (!authToken || !ct0) {
+  return {
+  ok: false,
+  error:'X cookies not configured in Sources. User needs to add x.auth_token + x.ct0.',
+  };
+  }
+
+  const headers: Record<string, string> = {
+  'User-Agent':'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/129.0.0.0 Safari/537.36',
+  Authorization:'Bearer AAAAAAAAAAAAAAAAAAAAANRILgAAAAAAnNwIzUejRCOuH5E6I8xnZz4puTs=1Zv7ttfk8LF81IUq16cHjhLTvJu4FA33AGWWjCpTnA',
+  Cookie: `auth_token=${authToken}; ct0=${ct0}`,
+  'X-Csrf-Token': ct0,
+  'X-Twitter-Auth-Type':'OAuth2Session',
+  'Content-Type':'application/json',
+  };
+
+  // Probe 1: cheap endpoint (UserByScreenName) — just checks if cookies are
+  // accepted, doesn't require any keyword or count.
+  let res: Response;
+  try {
+  res = await fetch(
+  `https://api.twitter.com/graphql/G3KGOASz96M-Qu0nwmGXNg/UserByScreenName?variables=${encodeURIComponent(
+  JSON.stringify({ screen_name:'twitter', withSafetyModeUserFields: true }),
+  )}`,
+  { headers, signal: AbortSignal.timeout(10000) },
+  );
+  } catch (e) {
+  return {
+  ok: false,
+  error: `Network error reaching X: ${e instanceof Error ? e.message : String(e)} (Vercel → api.twitter.com may be blocked from this region)`,
+  };
+  }
+
+  const status = res.status;
+  const raw = await res.text().catch(() =>'<unreadable>');
+  const truncated = raw.slice(0, 300).replace(/\s+/g,' ').trim();
+
+  if (status === 200) {
+  try {
+  const data = JSON.parse(raw) as {
+  data?: { user?: { result?: { rest_id?: string; legacy?: { screen_name?: string } } } };
+  };
+  const handle = data.data?.user?.result?.legacy?.screen_name;
+  if (handle) {
+  return {
+  ok: true,
+  data: {
+  diagnosis:'ok',
+  message: `X cookies are working. Probed @${handle} successfully.`,
+  },
+  };
+  }
+  return {
+  ok: false,
+  error: 'X returned 200 but no user data — unexpected shape.',
+  };
+  } catch {
+  const looksLikeHtml = /^<(!doctype|html)/i.test(raw.trim());
+  return {
+  ok: false,
+  error: looksLikeHtml
+  ? 'X returned 200 with an HTML page (anti-bot challenge). Cookies are likely fine — Vercel\'s datacenter IP is being challenged. The X integration will not work from this deployment unless we route through a residential proxy or self-host.'
+  : `X returned 200 with non-JSON body. Body: ${truncated}`,
+  };
+  }
+  }
+
+  if (status === 401 || status === 403) {
+  return {
+  ok: false,
+  error: `X returned HTTP ${status}. Cookies are expired or invalid. Re-extract auth_token + ct0 from x.com (DevTools → Application → Cookies → copy the current values) and re-save them via Sources panel. Body: ${truncated}`,
+  };
+  }
+
+  if (status === 429) {
+  return {
+  ok: false,
+  error: `X returned HTTP 429. Rate-limited — the Vercel datacenter IP is being throttled. Cookies are fine, just back off and try later. Body: ${truncated}`,
+  };
+  }
+
+  if (status >= 500) {
+  return {
+  ok: false,
+  error: `X returned HTTP ${status} (server error). Body: ${truncated}`,
+  };
+  }
+
+  return {
+  ok: false,
+  error: `X returned unexpected HTTP ${status}. Body: ${truncated}`,
+  };
+ }
+
+ // ─── Insights (user-accumulated content) ──────────────────────────────────
 //
 // The agent captures"沉淀"— reflections, project breakdowns, methods,
 // discoveries, sharings, fragments — into vp_insights. Daily-content skill
@@ -987,7 +1148,7 @@ async function forgetCreator(
 // ─── Tool registry (definitions + dispatch) ───────────────────────────────
 
 export type ToolName =
- |'web_search'|'web_image_search'|'github_read'|'twitter_search'|'twitter_get_user_tweets'|'twitter_get_tweet_replies'|'twitter_get_tweet_metrics'|'twitter_get_mentions'|'suggest_similar_creators'|'remember_preference'|'read_preferences'|'save_insight'|'list_insights'|'delete_insight'|'search_insights'|'remember_creator'|'list_creators'|'forget_creator';
+  |'web_search'|'web_image_search'|'github_read'|'twitter_search'|'twitter_get_user_tweets'|'twitter_get_tweet_replies'|'twitter_get_tweet_metrics'|'twitter_get_mentions'|'verify_x_credentials'|'suggest_similar_creators'|'remember_preference'|'read_preferences'|'save_insight'|'list_insights'|'delete_insight'|'search_insights'|'remember_creator'|'list_creators'|'forget_creator';
 
 export const TOOL_DEFINITIONS: ToolDefinition[] = [
  {
@@ -1027,18 +1188,27 @@ export const TOOL_DEFINITIONS: ToolDefinition[] = [
  required: ['owner','repo'],
  },
  },
- {
- name:'twitter_search',
- description:"Search recent tweets on X by keyword. Use to find trending discussions and angle ideas. Requires X cookies (preferences'x.auth_token'+'x.ct0').",
- parameters: {
- type:'object',
- properties: {
- query: { type:'string', description:'Search query'},
- count: { type:'string', description:'Optional, default 20'},
- },
- required: ['query'],
- },
- },
+  {
+  name:'twitter_search',
+  description:"Search recent tweets on X by keyword. Use to find trending discussions and angle ideas. Requires X cookies (preferences'x.auth_token'+'x.ct0').",
+  parameters: {
+  type:'object',
+  properties: {
+  query: { type:'string', description:'Search query'},
+  count: { type:'string', description:'Optional, default 20'},
+  },
+  required: ['query'],
+  },
+  },
+  {
+  name:'verify_x_credentials',
+  description:"Self-test the user's X cookies (auth_token + ct0) and report exactly what's wrong. Call this BEFORE twitter_search when an X call just failed with a vague error — it returns a precise diagnosis: 'ok' / 'cookies expired (401/403)' / 'X anti-bot challenge (HTML returned)' / 'rate-limited (429)' / 'network error'. Helps distinguish cookie problems from Vercel-IP problems.",
+  parameters: {
+  type:'object',
+  properties: {},
+  required: [],
+  },
+  },
  {
   name:'twitter_get_user_tweets',
   description:"Fetch the most recent tweets of a given X user. Use to study a benchmark account's recent content. For the user's OWN tweets, read their handle from Sources panel ('自己的 X 账号' / x.handle key) and call this with that handle — the response includes impressions/likes/reposts/replies metrics on each tweet which skill 8 (analysis) needs. Requires X cookies in preferences.",
@@ -1286,13 +1456,15 @@ export async function runTool(
  userId,
  String(args.tweet_id ??''),
  );
- case'twitter_get_mentions':
- return twitterGetMentions(
- userId,
- String(args.handle ??''),
- Number(args.hours ?? 24),
- Number(args.max_results ?? 20),
- );
+  case'twitter_get_mentions':
+  return twitterGetMentions(
+  userId,
+  String(args.handle ??''),
+  Number(args.hours ?? 24),
+  Number(args.max_results ?? 20),
+  );
+  case'verify_x_credentials':
+  return verifyXCredentials(userId);
  case'suggest_similar_creators':
  return suggestSimilarCreators(
  String(args.account_context ??''),
