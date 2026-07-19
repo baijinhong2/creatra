@@ -219,6 +219,60 @@ async function githubRead(
  }
 }
 
+/**
+ * Standard X GraphQL features payload. Required for almost all modern X GraphQL
+ * endpoints — without it, X returns 404 even with valid cookies (X rotated the
+ * feature flag expectations and the old query hash is now incompatible).
+ *
+ * Keep this in sync with what the x.com web client sends. Last verified: 2026-07.
+ */
+const X_FEATURES = {
+  rweb_tipjar_consumption_enabled: true,
+  responsive_web_graphql_exclude_directive_enabled: true,
+  verified_phone_label_enabled: false,
+  creator_subscriptions_tweet_preview_api_enabled: true,
+  responsive_web_graphql_timeline_navigation_enabled: true,
+  responsive_web_graphql_skip_user_profile_image_extensions_enabled: false,
+  communities_web_enable_tweet_community_results_fetch: true,
+  c9s_tweet_anatomy_moderator_badge_enabled: true,
+  articles_preview_enabled: true,
+  responsive_web_edit_tweet_api_enabled: true,
+  graphql_is_translatable_rweb_tweet_is_translatable_enabled: true,
+  view_counts_everywhere_api_enabled: true,
+  longform_notetweets_consumption_enabled: true,
+  responsive_web_twitter_article_tweet_consumption_enabled: true,
+  tweet_awards_web_tipping_enabled: false,
+  creator_subscriptions_quote_tweet_preview_enabled: false,
+  freedom_of_speech_not_reach_fetch_enabled: true,
+  standardized_nudges_misinfo: true,
+  tweet_with_visibility_results_prefer_gql_limited_actions_policy_enabled: true,
+  rweb_video_timestamps_enabled: true,
+  longform_notetweets_rich_text_read_enabled: true,
+  longform_notetweets_inline_media_enabled: true,
+  responsive_web_enhance_cards_enabled: false,
+} as const;
+
+function xGraphqlUrl(
+  queryHash: string,
+  operation: string,
+  variables: Record<string, unknown>,
+  extraQuery?: Record<string, unknown>,
+): string {
+  const params: Record<string, string> = {
+  variables: JSON.stringify(variables),
+  features: JSON.stringify(X_FEATURES),
+  };
+  if (extraQuery) {
+  for (const [k, v] of Object.entries(extraQuery)) {
+  params[k] = String(v);
+  }
+  }
+  const qs = Object.entries(params)
+  .map(([k, v]) => `${encodeURIComponent(k)}=${encodeURIComponent(v)}`)
+  .join('&');
+  return `https://api.twitter.com/graphql/${queryHash}/${operation}?${qs}`;
+}
+
 async function twitterApi(
   userId: string,
   endpoint:'search'|'user-tweets',
@@ -244,9 +298,10 @@ async function twitterApi(
   const username = params.username;
   if (!username) return { ok: false, error:'username required'};
   const userIdRes = await fetch(
-  `https://api.twitter.com/graphql/G3KGOASz96M-Qu0nwmGXNg/UserByScreenName?variables=${encodeURIComponent(
-  JSON.stringify({ screen_name: username, withSafetyModeUserFields: true }),
-  )}`,
+  xGraphqlUrl('G3KGOASz96M-Qu0nwmGXNg','UserByScreenName', {
+  screen_name: username,
+  withSafetyModeUserFields: true,
+  }),
   { headers, signal: AbortSignal.timeout(10000) },
   );
   const userIdJson = await safeParseJson(userIdRes, 'UserByScreenName');
@@ -255,8 +310,7 @@ async function twitterApi(
   if (!restId) return { ok: false, error:'User not found'};
 
   const tweetsRes = await fetch(
-  `https://api.twitter.com/graphql/E3opETHurmVJflFsUBVuQ/UserTweets?variables=${encodeURIComponent(
-  JSON.stringify({
+  xGraphqlUrl('E3opETHurmVJflFsUBVuQ','UserTweets', {
   userId: restId,
   count: Number(params.count ?? 10),
   includePromotedContent: false,
@@ -264,7 +318,6 @@ async function twitterApi(
   withVoice: true,
   withV2Timeline: true,
   }),
-  )}`,
   { headers, signal: AbortSignal.timeout(10000) },
   );
   data = (await safeParseJson(tweetsRes, 'UserTweets')).data;
@@ -272,14 +325,12 @@ async function twitterApi(
   const query = params.query;
   if (!query) return { ok: false, error:'query required'};
   const searchRes = await fetch(
-  `https://api.twitter.com/graphql/gkjsKepM6gl_HmFWoWKfgg/SearchTimeline?variables=${encodeURIComponent(
-  JSON.stringify({
+  xGraphqlUrl('gkjsKepM6gl_HmFWoWKfgg','SearchTimeline', {
   rawQuery: query,
   count: Number(params.count ?? 20),
   querySource:'typed_query',
   product:'Latest',
   }),
-  )}`,
   { headers, signal: AbortSignal.timeout(10000) },
   );
   const parsed = await safeParseJson(searchRes,'SearchTimeline');
@@ -797,9 +848,10 @@ async function verifyXCredentials(userId: string): Promise<ToolResult> {
   let res: Response;
   try {
   res = await fetch(
-  `https://api.twitter.com/graphql/G3KGOASz96M-Qu0nwmGXNg/UserByScreenName?variables=${encodeURIComponent(
-  JSON.stringify({ screen_name:'twitter', withSafetyModeUserFields: true }),
-  )}`,
+  xGraphqlUrl('G3KGOASz96M-Qu0nwmGXNg','UserByScreenName', {
+  screen_name:'twitter',
+  withSafetyModeUserFields: true,
+  }),
   { headers, signal: AbortSignal.timeout(10000) },
   );
   } catch (e) {

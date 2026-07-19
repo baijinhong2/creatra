@@ -86,64 +86,98 @@ for (const [uid, u] of users) {
   'Content-Type': 'application/json',
   };
 
+  const features = {
+  rweb_tipjar_consumption_enabled: true,
+  responsive_web_graphql_exclude_directive_enabled: true,
+  verified_phone_label_enabled: false,
+  creator_subscriptions_tweet_preview_api_enabled: true,
+  responsive_web_graphql_timeline_navigation_enabled: true,
+  responsive_web_graphql_skip_user_profile_image_extensions_enabled: false,
+  communities_web_enable_tweet_community_results_fetch: true,
+  c9s_tweet_anatomy_moderator_badge_enabled: true,
+  articles_preview_enabled: true,
+  responsive_web_edit_tweet_api_enabled: true,
+  graphql_is_translatable_rweb_tweet_is_translatable_enabled: true,
+  view_counts_everywhere_api_enabled: true,
+  longform_notetweets_consumption_enabled: true,
+  responsive_web_twitter_article_tweet_consumption_enabled: true,
+  tweet_awards_web_tipping_enabled: false,
+  creator_subscriptions_quote_tweet_preview_enabled: false,
+  freedom_of_speech_not_reach_fetch_enabled: true,
+  standardized_nudges_misinfo: true,
+  tweet_with_visibility_results_prefer_gql_limited_actions_policy_enabled: true,
+  rweb_video_timestamps_enabled: true,
+  longform_notetweets_rich_text_read_enabled: true,
+  longform_notetweets_inline_media_enabled: true,
+  responsive_web_enhance_cards_enabled: false,
+  };
+
+  // Probe UserByScreenName (same as agent's verify_x_credentials)
   const url = `https://api.twitter.com/graphql/G3KGOASz96M-Qu0nwmGXNg/UserByScreenName?variables=${encodeURIComponent(
   JSON.stringify({ screen_name: 'twitter', withSafetyModeUserFields: true }),
-  )}`;
+  )}&features=${encodeURIComponent(JSON.stringify(features))}`;
 
+  // Helper: probe and report.
+  async function probe(label, probeUrl) {
   const t0 = Date.now();
   let fetchRes, fetchErr;
   try {
-  fetchRes = await fetch(url, { headers, signal: AbortSignal.timeout(15000) });
+  fetchRes = await fetch(probeUrl, { headers, signal: AbortSignal.timeout(15000) });
   } catch (e) {
   fetchErr = e;
   }
   const ms = Date.now() - t0;
-
   if (fetchErr) {
-  console.log(`  → NETWORK ERROR in ${ms}ms: ${fetchErr.message || fetchErr}`);
-  console.log('     (Vercel → api.twitter.com path may be blocked from this region)\n');
-  tested++;
-  continue;
+  console.log(`  [${label}] → NETWORK ERROR in ${ms}ms: ${fetchErr.message || fetchErr}`);
+  return null;
   }
-
   const status = fetchRes.status;
   const raw = await fetchRes.text().catch(() => '<unreadable>');
   const truncated = raw.slice(0, 200).replace(/\s+/g, ' ').trim();
+  console.log(`  [${label}] → HTTP ${status} in ${ms}ms`);
+  console.log(`            body[:200]: ${truncated}`);
+  return { status, raw };
+  }
 
-  console.log(`  → HTTP ${status} in ${ms}ms`);
-  console.log(`     body[:200]: ${truncated}`);
-
-  if (status === 200) {
-  try {
-  const data = JSON.parse(raw);
-  const handle = data?.data?.user?.result?.legacy?.screen_name;
-  if (handle) {
-  console.log(`  ✅ DIAGNOSIS: cookies are WORKING (probed @${handle})`);
-  } else {
-  console.log(`  ⚠️  DIAGNOSIS: 200 but unexpected shape`);
-  }
-  } catch {
-  const html = /^<(!doctype|html)/i.test(raw.trim());
-  if (html) {
-  console.log('  ❌ DIAGNOSIS: X returned 200 but with an HTML anti-bot challenge page.');
-  console.log('     Cookies themselves are FINE. The Vercel datacenter IP is being challenged.');
-  console.log('     → The X integration will not work from this deployment.');
-  console.log('     → Solutions: deploy behind a residential proxy, or self-host the app.');
-  } else {
-  console.log('  ⚠️  DIAGNOSIS: 200 but non-JSON, non-HTML');
-  }
-  }
-  } else if (status === 401 || status === 403) {
-  console.log(`  ❌ DIAGNOSIS: cookies are EXPIRED/INVALID. Re-extract auth_token + ct0 from x.com.`);
-  } else if (status === 429) {
-  console.log(`  ⚠️  DIAGNOSIS: X rate-limited this IP. Cookies are fine, just back off.`);
-  } else if (status >= 500) {
-  console.log(`  ⚠️  DIAGNOSIS: X server error (5xx). Try again later.`);
-  } else {
-  console.log(`  ⚠️  DIAGNOSIS: unexpected status ${status}`);
-  }
+  // Probe 1: UserByScreenName (cookie sanity check)
+  const probe1 = await probe('UserByScreenName', url);
   console.log();
   tested++;
+
+  if (!probe1 || probe1.status !== 200) {
+  console.log('  → UserByScreenName failed; skipping SearchTimeline probe.\n');
+  continue;
+  }
+
+  // Probe 2: SearchTimeline (the actual endpoint that 404'd)
+  const searchUrl = `https://api.twitter.com/graphql/gkjsKepM6gl_HmFWoWKfgg/SearchTimeline?variables=${encodeURIComponent(
+  JSON.stringify({
+  rawQuery: 'AI agents',
+  count: 5,
+  querySource: 'typed_query',
+  product: 'Latest',
+  }),
+  )}&features=${encodeURIComponent(JSON.stringify(features))}`;
+  const probe2 = await probe('SearchTimeline ', searchUrl);
+  console.log();
+
+  if (probe2?.status === 200) {
+  try {
+  const data = JSON.parse(probe2.raw);
+  const tweets = data?.data?.search_by_raw_query?.search_timeline?.timeline?.instructions?.[0]?.entries;
+  const n = Array.isArray(tweets) ? tweets.length : 0;
+  console.log(`  ✅ SearchTimeline WORKS — got ${n} tweet entries in the timeline.`);
+  } catch {
+  console.log('  ⚠️  SearchTimeline 200 but unexpected shape.');
+  }
+  } else if (probe2?.status === 404) {
+  console.log('  ❌ SearchTimeline returns 404 — the query hash is dead.');
+  console.log('     → This is X rotating the GraphQL hash. Need to find the current one.');
+  console.log('     → Run from a browser DevTools on x.com to capture the new hash.');
+  } else if (probe2?.status === 401 || probe2?.status === 403) {
+  console.log('  ❌ SearchTimeline auth rejected. Cookies work for some endpoints but not this one.');
+  }
+  console.log();
 }
 
 console.log('━'.repeat(70));
