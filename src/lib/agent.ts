@@ -252,39 +252,67 @@ export async function* runAgent(
  tool_calls: toolCalls,
  });
 
- for (const tc of toolCalls) {
- const args = safeParse(tc.function.arguments);
+  for (const tc of toolCalls) {
+  const args = safeParse(tc.function.arguments);
 
- yield {
- type:'tool_start',
- toolCallId: tc.id,
- name: tc.function.name,
- args,
- };
+  yield {
+  type:'tool_start',
+  toolCallId: tc.id,
+  name: tc.function.name,
+  args,
+  };
 
- const r = await runTool(tc.function.name as ToolName, args, {
- userId,
- conversationId,
- });
+  const r = await runTool(tc.function.name as ToolName, args, {
+  userId,
+  conversationId,
+  });
 
- yield {
- type:'tool_end',
- toolCallId: tc.id,
- name: tc.function.name,
- ok: r.ok,
- result: r.data,
- error: r.error,
- };
+  yield {
+  type:'tool_end',
+  toolCallId: tc.id,
+  name: tc.function.name,
+  ok: r.ok,
+  result: r.data,
+  error: r.error,
+  };
 
- messages.push({
- role:'tool',
- tool_call_id: tc.id,
- content: JSON.stringify({ ok: r.ok, data: r.data, error: r.error }),
- });
- }
+  messages.push({
+  role:'tool',
+  tool_call_id: tc.id,
+  content: JSON.stringify({ ok: r.ok, data: r.data, error: r.error }),
+  });
+  }
 
- continue;
- }
+  // ─── Loop guard: detect repeated identical tool errors ────────────────
+  // If the last 2 tool messages have the same (ok: false, error) tuple, the
+  // LLM is stuck retrying a broken tool. Force a final user-facing message
+  // instead of letting the loop run to MAX_ITERATIONS and dumping a cryptic
+  // "Agent loop hit max iterations" error.
+  const toolMessages = messages.filter((m) => m.role ==='tool');
+  if (toolMessages.length >= 2) {
+  const last1 = safeParse((toolMessages[toolMessages.length - 1] as { content: string }).content);
+  const last2 = safeParse((toolMessages[toolMessages.length - 2] as { content: string }).content);
+  if (
+  last1.ok === false && last2.ok === false &&
+  typeof last1.error ==='string' &&
+  last1.error === last2.error
+  ) {
+  const stuckError = last1.error as string;
+  yield {
+  type:'message_end',
+  content:
+  `我刚才连续 2 次都拿到同样的错误,看来这个工具现在不可用:\n\n` +
+  `\`${stuckError}\`\n\n` +
+  `这种情况一般是 X 的 GraphQL 接口本身挂了,不是我重试能修的。` +
+  `建议先告诉用户"今日 X 热点"功能现在不可用,改用 web_search 兜底或稍后再试。`,
+  };
+  yield { type:'done'};
+  return;
+  }
+  }
+
+  continue;
+  }
 
  if (content.length > 0) {
  yield { type:'message_end', content };

@@ -810,19 +810,25 @@ function redactRows(
   });
  }
 
- /**
- * Self-test the user's X cookies against a known-good X API endpoint.
+  /**
+ * Self-test the user's X cookies against the TWO endpoints the agent actually
+ * uses (UserByScreenName for cookies sanity, SearchTimeline for actual search).
+ *
+ * Why two probes: UserByScreenName accepts the cookies and returns 200, but
+ * SearchTimeline can independently 404 because X rotated that specific query
+ * hash. Probing only one endpoint gives a misleading "all good" answer and
+ * causes the agent to loop retrying search.
+ *
  * Returns a structured diagnosis the agent (or user) can read directly:
- * - "not configured" → no cookies in preferences, user needs to set them
- * - "ok" → cookies are working, X returned real data
- * - "auth expired" → X returned 401/403, cookies were valid at some point but
- *   X rotated the session; user must re-extract auth_token + ct0 from x.com
- * - "rate limited" → X is throttling this IP (Vercel datacenter IP, expected
- *   on free tier); cookies themselves are fine, just try again later or rotate
- * - "anti-bot challenge" → X returned HTML instead of JSON; Vercel's IP is
- *   being challenged. Cookies are fine; the X integration will not work from
- *   Vercel. Solutions: deploy on a residential proxy, or self-host.
- * - "network/timeout" → fetch didn't even get a response
+ * - "ok" → cookies + both endpoints working
+ * - "cookies missing" → not configured in Sources
+ * - "cookies expired" → X returned 401/403, user must re-extract
+ * - "search hash dead" → cookies work, but SearchTimeline returned 404 (X
+ *   rotated the GraphQL hash). The X search feature is broken until someone
+ *   updates the query hash in src/lib/tools.ts (search for "gkjsKepM6gl_HmFWoWKfgg").
+ * - "rate limited" → X throttled the Vercel IP
+ * - "anti-bot challenge" → X returned HTML instead of JSON
+ * - "network/timeout" → fetch didn't get a response
  */
 async function verifyXCredentials(userId: string): Promise<ToolResult> {
   const authToken = await getCred(userId,'x.auth_token','X_AUTH_TOKEN');
@@ -843,82 +849,159 @@ async function verifyXCredentials(userId: string): Promise<ToolResult> {
   'Content-Type':'application/json',
   };
 
-  // Probe 1: cheap endpoint (UserByScreenName) — just checks if cookies are
-  // accepted, doesn't require any keyword or count.
+  // Probe 1: UserByScreenName @twitter — the cheap cookie sanity check.
+  const probe1 = await probeXEndpoint(headers,'UserByScreenName',
+  'G3KGOASz96M-Qu0nwmGXNg',
+  { screen_name:'twitter', withSafetyModeUserFields: true },
+  );
+
+  if (probe1.kind ==='network') {
+  return { ok: false, error: probe1.summary };
+  }
+  if (probe1.kind ==='auth_expired') {
+  return {
+  ok: false,
+  error: `X returned ${probe1.status} to UserByScreenName → cookies are expired/invalid. Re-extract auth_token + ct0 from x.com. ${probe1.summary}`,
+  };
+  }
+  if (probe1.kind ==='rate_limited') {
+  return { ok: false, error: `X rate-limited the Vercel IP. ${probe1.summary}` };
+  }
+  if (probe1.kind ==='antipbot') {
+  return {
+  ok: false,
+  error: `X returned an HTML anti-bot challenge on UserByScreenName. Vercel datacenter IP is being challenged. X integration will not work from this deployment. ${probe1.summary}`,
+  };
+  }
+  if (probe1.kind ==='other_4xx_5xx') {
+  return { ok: false, error: `X returned HTTP ${probe1.status} to UserByScreenName. ${probe1.summary}` };
+  }
+  // probe1.kind === 'ok' from here on.
+
+  // Probe 2: SearchTimeline — the actual endpoint that 404s. We probe this
+  // even if probe1 was ok, because X can rotate hashes independently.
+  const probe2 = await probeXEndpoint(headers,'SearchTimeline',
+  'gkjsKepM6gl_HmFWoWKfgg',
+  {
+  rawQuery:'hello',
+  count: 5,
+  querySource:'typed_query',
+  product:'Latest',
+  },
+  );
+
+  if (probe2.kind ==='network') {
+  return { ok: false, error: `UserByScreenName works, but SearchTimeline hit a network error. ${probe2.summary}` };
+  }
+  if (probe2.kind ==='auth_expired') {
+  // This shouldn't happen if probe1 was ok, but handle it anyway.
+  return { ok: false, error: `SearchTimeline ${probe2.status} (cookies seem to work for some endpoints but not this one). ${probe2.summary}` };
+  }
+  if (probe2.kind ==='rate_limited') {
+  return { ok: false, error: `UserByScreenName works, but SearchTimeline is rate-limited. ${probe2.summary}` };
+  }
+  if (probe2.kind ==='antipbot') {
+  return { ok: false, error: `SearchTimeline hit anti-bot challenge. ${probe2.summary}` };
+  }
+  if (probe2.kind ==='other_4xx_5xx') {
+  // 404 is the common case here. Surface a clear, actionable diagnosis.
+  if (probe2.status === 404) {
+  return {
+  ok: false,
+  error: `X search is BROKEN: SearchTimeline returns HTTP 404. ` +
+  `Cookies work fine (UserByScreenName OK), but the GraphQL query hash ` +
+  `'gkjsKepM6gl_HmFWoWKfgg' has been rotated by X. The '今日 X 热点' chip ` +
+  `and any twitter_search / twitter_get_user_tweets call will fail until ` +
+  `someone updates the hash in src/lib/tools.ts (capture the new one from ` +
+  `x.com DevTools → Network → any GraphQL request → copy the hash from the URL).`,
+  };
+  }
+  return { ok: false, error: `SearchTimeline HTTP ${probe2.status}. ${probe2.summary}` };
+  }
+  // Both probes ok.
+  return {
+  ok: true,
+  data: {
+  diagnosis:'ok',
+  message: 'X cookies are working. UserByScreenName and SearchTimeline both return 200. Search and user-tweet tools are available.',
+  },
+  };
+ }
+
+ /**
+ * Internal probe helper used by verifyXCredentials. Returns a tagged-union
+ * result so the caller can branch on what kind of failure it was.
+ */
+type XProbeResult =
+  | { kind:'ok'; status: 200; raw: string }
+  | { kind:'network'; summary: string }
+  | { kind:'auth_expired'; status: 401 | 403; summary: string }
+  | { kind:'rate_limited'; status: 429; summary: string }
+  | { kind:'antipbot'; status: 200; summary: string }
+  | { kind:'other_4xx_5xx'; status: number; summary: string };
+
+ async function probeXEndpoint(
+  headers: Record<string, string>,
+  operation: string,
+  queryHash: string,
+  variables: Record<string, unknown>,
+ ): Promise<XProbeResult> {
   let res: Response;
   try {
   res = await fetch(
-  xGraphqlUrl('G3KGOASz96M-Qu0nwmGXNg','UserByScreenName', {
-  screen_name:'twitter',
-  withSafetyModeUserFields: true,
-  }),
+  xGraphqlUrl(queryHash, operation, variables),
   { headers, signal: AbortSignal.timeout(10000) },
   );
   } catch (e) {
   return {
-  ok: false,
-  error: `Network error reaching X: ${e instanceof Error ? e.message : String(e)} (Vercel → api.twitter.com may be blocked from this region)`,
+  kind:'network',
+  summary: `Network error on ${operation}: ${e instanceof Error ? e.message : String(e)} (Vercel → api.twitter.com may be blocked from this region).`,
   };
   }
 
   const status = res.status;
   const raw = await res.text().catch(() =>'<unreadable>');
-  const truncated = raw.slice(0, 300).replace(/\s+/g,' ').trim();
+  const truncated = raw.slice(0, 250).replace(/\s+/g,' ').trim();
 
   if (status === 200) {
   try {
-  const data = JSON.parse(raw) as {
-  data?: { user?: { result?: { rest_id?: string; legacy?: { screen_name?: string } } } };
-  };
-  const handle = data.data?.user?.result?.legacy?.screen_name;
-  if (handle) {
+  JSON.parse(raw);
+  return { kind:'ok', status: 200, raw };
+  } catch {
+  const html = /^<(!doctype|html)/i.test(raw.trim());
+  if (html) {
   return {
-  ok: true,
-  data: {
-  diagnosis:'ok',
-  message: `X cookies are working. Probed @${handle} successfully.`,
-  },
+  kind:'antipbot',
+  status: 200,
+  summary: `${operation} returned 200 with HTML anti-bot page. body: ${truncated}`,
   };
   }
   return {
-  ok: false,
-  error: 'X returned 200 but no user data — unexpected shape.',
-  };
-  } catch {
-  const looksLikeHtml = /^<(!doctype|html)/i.test(raw.trim());
-  return {
-  ok: false,
-  error: looksLikeHtml
-  ? 'X returned 200 with an HTML page (anti-bot challenge). Cookies are likely fine — Vercel\'s datacenter IP is being challenged. The X integration will not work from this deployment unless we route through a residential proxy or self-host.'
-  : `X returned 200 with non-JSON body. Body: ${truncated}`,
+  kind:'other_4xx_5xx',
+  status: 200,
+  summary: `${operation} returned 200 with non-JSON body. body: ${truncated}`,
   };
   }
   }
 
   if (status === 401 || status === 403) {
   return {
-  ok: false,
-  error: `X returned HTTP ${status}. Cookies are expired or invalid. Re-extract auth_token + ct0 from x.com (DevTools → Application → Cookies → copy the current values) and re-save them via Sources panel. Body: ${truncated}`,
+  kind:'auth_expired',
+  status: status as 401 | 403,
+  summary: `${operation} HTTP ${status}. body: ${truncated}`,
   };
   }
-
   if (status === 429) {
   return {
-  ok: false,
-  error: `X returned HTTP 429. Rate-limited — the Vercel datacenter IP is being throttled. Cookies are fine, just back off and try later. Body: ${truncated}`,
+  kind:'rate_limited',
+  status: 429,
+  summary: `${operation} HTTP 429. body: ${truncated}`,
   };
   }
-
-  if (status >= 500) {
   return {
-  ok: false,
-  error: `X returned HTTP ${status} (server error). Body: ${truncated}`,
-  };
-  }
-
-  return {
-  ok: false,
-  error: `X returned unexpected HTTP ${status}. Body: ${truncated}`,
+  kind:'other_4xx_5xx',
+  status,
+  summary: `${operation} HTTP ${status}. body: ${truncated}`,
   };
  }
 
