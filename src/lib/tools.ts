@@ -1582,6 +1582,7 @@ export async function runTool(
   );
   case'reddit_search':
   return redditSearch(
+  userId,
   String(args.query ??''),
   (args.sort as'hot'|'top'|'relevance'|'new'|'comments') ??'hot',
   (args.time_filter as'day'|'week'|'month'|'year'|'all') ??'day',
@@ -1590,6 +1591,7 @@ export async function runTool(
   );
   case'reddit_get_subreddit_posts':
   return redditGetSubredditPosts(
+  userId,
   String(args.subreddit ??''),
   (args.sort as'hot'|'top'|'new'|'rising') ??'hot',
   (args.time_filter as'day'|'week'|'month'|'year'|'all') ??'day',
@@ -1710,6 +1712,59 @@ async function redditFetch(
   }
  }
 
+/**
+ * Fallback when Reddit's public JSON API is blocked (403 anti-bot page).
+ * Uses Tavily web search with `site:reddit.com` filter to get Reddit posts
+ * indexed by Google/Bing. Not as fresh as the public API (cached index),
+ * but works from datacenter IPs that Reddit blocks.
+ */
+async function webSearchReddit(
+  userId: string,
+  query: string,
+  limit: number,
+  subreddit?: string,
+  timeFilter: 'day'|'week'|'month'|'year'|'all' ='day',
+): Promise<ToolResult> {
+  const siteQuery = subreddit
+  ? `site:reddit.com/r/${encodeURIComponent(subreddit)} ${query}`
+  : `site:reddit.com ${query}`;
+  const tavilyResult = await tavilySearch(userId, siteQuery, Math.max(limit * 2, 10));
+  if (!tavilyResult.ok) return tavilyResult;
+  const tavilyData = tavilyResult.data as {
+  results?: Array<{ title: string; url: string; content: string }>;
+  };
+  const items = (tavilyData.results ?? []).filter((r) => /reddit\.com\/r\//.test(r.url));
+  // Best-effort parse: extract subreddit + post id from URL.
+  const posts = items.slice(0, limit).map((r) => {
+  const urlMatch = r.url.match(/reddit\.com\/r\/([^/]+)\/comments\/([a-z0-9]+)/i);
+  const subredditName = urlMatch?.[1] ?? subreddit ??'?';
+  const postId = urlMatch?.[2] ??'?';
+  return {
+  id: postId,
+  title: r.title,
+  subreddit: subredditName,
+  author:'?',
+  score: 0,
+  num_comments: 0,
+  url: r.url,
+  reddit_url: r.url,
+  age_hours: -1,
+  selftext_excerpt: r.content.slice(0, 500),
+  };
+  });
+  return {
+  ok: true,
+  data: {
+  query,
+  subreddit: subreddit ?? null,
+  source:'web_search_fallback',
+  source_note: 'Reddit public JSON API was blocked (403 anti-bot). These results are from Google/Bing indexed pages via web_search; not real-time.',
+  count: posts.length,
+  posts,
+  },
+  };
+ }
+
 type RedditPost = {
   id: string;
   title: string;
@@ -1774,6 +1829,7 @@ function extractRedditComment(raw: unknown): RedditComment | null {
  }
 
 async function redditSearch(
+  userId: string,
   query: string,
   sort:'hot'|'top'|'relevance'|'new'|'comments'='hot',
   t:'day'|'week'|'month'|'year'|'all'='day',
@@ -1793,6 +1849,10 @@ async function redditSearch(
   subreddit ? `/r/${encodeURIComponent(subreddit)}/search.json` :'/search.json',
   params,
   );
+  // If Reddit blocks us with 403 (anti-bot), fall back to web_search.
+  if (!r.ok && /403|429|HTML|anti-bot|<body/i.test(r.error ??'')) {
+  return webSearchReddit(userId, query, limit, subreddit, t);
+  }
   if (!r.ok) return r;
   const data = r.data as { data?: { children?: Array<{ data: unknown }> } } | undefined;
   const children = data?.data?.children ?? [];
@@ -1824,6 +1884,7 @@ async function redditSearch(
  }
 
 async function redditGetSubredditPosts(
+  userId: string,
   subreddit: string,
   sort:'hot'|'top'|'new'|'rising'='hot',
   t:'day'|'week'|'month'|'year'|'all'='day',
@@ -1838,6 +1899,16 @@ async function redditGetSubredditPosts(
   `/r/${encodeURIComponent(subreddit)}/${sort}.json`,
   params,
   );
+  // Anti-bot fallback: search the subreddit name via web_search.
+  if (!r.ok && /403|429|HTML|anti-bot|<body/i.test(r.error ??'')) {
+  return webSearchReddit(
+  userId,
+  `top posts ${sort ==='top' ? t :'this week'}`,
+  limit,
+  subreddit,
+  t,
+  );
+  }
   if (!r.ok) return r;
   const data = r.data as { data?: { children?: Array<{ data: unknown }> } } | undefined;
   const children = data?.data?.children ?? [];
