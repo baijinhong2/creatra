@@ -53,45 +53,19 @@ export async function generateHealthReport(
  xHandle: string | null,
  weekStart?: string,
 ): Promise<HealthReport | null> {
- if (!xHandle) {
- return null;
- }
+  if (!xHandle) {
+  return null;
+  }
 
- // Default to last week's Monday
- const start = weekStart ?? getLastMondayISO();
- const end = getSundayISO(start);
+  // Default to last week's Monday
+  const start = weekStart ?? getLastMondayISO();
+  const end = getSundayISO(start);
 
- // Pull last 30 days of tweets
- let tweets: any[] = [];
- try {
- const r = await runTool('twitter_get_user_tweets',
- { username: xHandle, count:'50'},
- { userId },
- );
- if (r.ok) {
- const data = r.data as any;
- tweets = extractTweetsList(data);
- }
- } catch {}
+  // X (Twitter) integration removed 2026-07-22. Stubbed: returns empty report.
+  // To re-enable with Reddit, fetch reddit_get_user_posts(handle, sort=new, t=month, limit=50).
+  const recent: any[] = [];
 
- // Filter to the past 30 days
- const cutoff = Date.now() - 30 * 24 * 60 * 60 * 1000;
- const recent = tweets
- .map((t) => ({
- ...t,
- published_at: new Date(t.created_at ?? t.published_at ?? Date.now()),
- text: t.full_text ?? t.text ??'',
- likes: t.favorite_count ?? t.likes ?? 0,
- retweets: t.retweet_count ?? t.retweets ?? 0,
- replies: t.reply_count ?? t.replies ?? 0,
- impressions: t.views?.count ?? t.impressions ?? 0,
- isRT: !!t.retweeted_status_id_str,
- isReply: !!t.in_reply_to_status_id_str,
- }))
- .filter((t) => t.published_at.getTime() > cutoff)
- .filter((t) => !t.isRT && !t.isReply);
-
- const tweetCount = recent.length;
+  const tweetCount = recent.length;
  const avgEngagement =
  tweetCount > 0
  ? recent.reduce(

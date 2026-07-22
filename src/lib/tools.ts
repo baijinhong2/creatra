@@ -1305,7 +1305,7 @@ async function forgetCreator(
 // ─── Tool registry (definitions + dispatch) ───────────────────────────────
 
 export type ToolName =
-  |'web_search'|'web_image_search'|'github_read'|'twitter_search'|'twitter_get_user_tweets'|'twitter_get_tweet_replies'|'twitter_get_tweet_metrics'|'twitter_get_mentions'|'verify_x_credentials'|'suggest_similar_creators'|'remember_preference'|'read_preferences'|'save_insight'|'list_insights'|'delete_insight'|'search_insights'|'remember_creator'|'list_creators'|'forget_creator';
+  |'web_search'|'web_image_search'|'github_read'|'reddit_search'|'reddit_get_subreddit_posts'|'reddit_get_post_comments'|'reddit_get_user_posts'|'suggest_similar_creators'|'remember_preference'|'read_preferences'|'save_insight'|'list_insights'|'delete_insight'|'search_insights'|'remember_creator'|'list_creators'|'forget_creator';
 
 export const TOOL_DEFINITIONS: ToolDefinition[] = [
  {
@@ -1346,89 +1346,77 @@ export const TOOL_DEFINITIONS: ToolDefinition[] = [
  },
  },
   {
-  name:'twitter_search',
-  description:"Search recent tweets on X by keyword. Use to find trending discussions and angle ideas. Requires X cookies (preferences'x.auth_token'+'x.ct0').",
+  name:'reddit_search',
+  description:"Search Reddit across all subreddits (or restricted to one). Use for '今日 Reddit 热点' style queries and to find recent discussions in the user's niche. No auth needed (public JSON API).",
   parameters: {
   type:'object',
   properties: {
-  query: { type:'string', description:'Search query'},
-  count: { type:'string', description:'Optional, default 20'},
+  query: { type:'string', description:'Search query (keywords)'},
+  sort: { type:'string', enum: ['hot','top','relevance','new','comments'], description:'Optional, default hot'},
+  time_filter: { type:'string', enum: ['day','week','month','year','all'], description:'Optional, default day'},
+  limit: { type:'string', description:'Optional, default 20, max 100'},
+  subreddit: { type:'string', description:'Optional. Restrict to a single subreddit (e.g. MachineLearning)'},
   },
   required: ['query'],
   },
   },
   {
-  name:'verify_x_credentials',
-  description:"Self-test the user's X cookies (auth_token + ct0) and report exactly what's wrong. Call this BEFORE twitter_search when an X call just failed with a vague error — it returns a precise diagnosis: 'ok' / 'cookies expired (401/403)' / 'X anti-bot challenge (HTML returned)' / 'rate-limited (429)' / 'network error'. Helps distinguish cookie problems from Vercel-IP problems.",
+  name:'reddit_get_subreddit_posts',
+  description:"Get posts from a specific subreddit — hot/top/new/rising. Use for '看对标社区动态' — fetch the user's watchlist communities and report what's hot today. No auth needed.",
   parameters: {
   type:'object',
-  properties: {},
-  required: [],
+  properties: {
+  subreddit: { type:'string', description:'Subreddit name without r/ (e.g. MachineLearning)'},
+  sort: { type:'string', enum: ['hot','top','new','rising'], description:'Optional, default hot'},
+  time_filter: { type:'string', enum: ['day','week','month','year','all'], description:'Optional, default day, only used when sort=top'},
+  limit: { type:'string', description:'Optional, default 20, max 100'},
+  },
+  required: ['subreddit'],
   },
   },
- {
-  name:'twitter_get_user_tweets',
-  description:"Fetch the most recent tweets of a given X user. Use to study a benchmark account's recent content. For the user's OWN tweets, read their handle from Sources panel ('自己的 X 账号' / x.handle key) and call this with that handle — the response includes impressions/likes/reposts/replies metrics on each tweet which skill 8 (analysis) needs. Requires X cookies in preferences.",
- parameters: {
- type:'object',
- properties: {
- username: { type:'string', description:'X handle without @'},
- count: { type:'string', description:'Optional, default 10'},
- },
- required: ['username'],
- },
- },
- {
- name:'twitter_get_tweet_replies',
- description:"Fetch the conversation thread under a single tweet (parent + replies) by tweet id. Use this for skill 6 (comment triage) — the user has their own recent tweet ids from twitter_get_user_tweets(their_handle), pass each interesting one here, then decide which replies deserve a response and draft one. Requires X cookies.",
- parameters: {
- type:'object',
- properties: {
- tweet_id: { type:'string', description:'Numeric X tweet id'},
- count: { type:'string', description:'Optional, default 30'},
- },
- required: ['tweet_id'],
- },
- },
- {
- name:'twitter_get_tweet_metrics',
- description:"Fetch current engagement metrics (likes, retweets, replies, quotes, impressions, bookmarks) for a single tweet by id. Use after the user marks a tweet as'used'and pastes the URL — pull periodically to track which agent suggestions actually performed well. Requires X cookies.",
- parameters: {
- type:'object',
- properties: {
- tweet_id: { type:'string', description:'Numeric X tweet id (extracted from URL)'},
- },
- required: ['tweet_id'],
- },
- },
- {
- name:'twitter_get_mentions',
- description:"Search for recent tweets that @-mention a given X handle (excluding the user's own tweets). Use for engagement monitoring — when someone @s the user, surface it in the reply inbox. Requires X cookies.",
- parameters: {
- type:'object',
- properties: {
- handle: { type:'string', description:"User's X handle without @"},
- hours: { type:'string', description:'Lookback window in hours, default 24'},
- max_results: { type:'string', description:'Max tweets to return, default 20'},
- },
- required: ['handle'],
- },
- },
- {
- name:'suggest_similar_creators',
- description:"Given the user's account positioning, recommend 15-20 candidate similar / benchmark X creators as raw leads. Each comes with a confidence level (high/medium/low) reflecting how sure the LLM is. The LLM may fabricate or misremember handles, so the agent SHOULD verify each candidate afterwards via `web_search(\"@handle niche twitter\")` (cheap, works without X cookies) and `twitter_get_user_tweets(handle, count=3)` (real bio + recent activity, requires X cookies) before showing the final list. Filter out low-confidence or unverified candidates, then output the top 10 verified ones with real bio / follower count / latest tweet.",
- parameters: {
- type:'object',
- properties: {
- account_context: {
- type:'string',
- description:"The user's account positioning / niche",
- },
- language: { type:'string', description:'"zh"or"en", default"zh"'},
- },
- required: ['account_context'],
- },
- },
+  {
+  name:'reddit_get_post_comments',
+  description:"Fetch a Reddit post and its top-level comments. Use for comment triage — find posts in your niche, see the discussion, decide which threads to engage with. No auth needed.",
+  parameters: {
+  type:'object',
+  properties: {
+  subreddit: { type:'string', description:'Subreddit name without r/'},
+  post_id: { type:'string', description:'Reddit post id (alphanumeric)'},
+  sort: { type:'string', enum: ['confidence','top','new','controversial','old'], description:'Optional, default confidence'},
+  limit: { type:'string', description:'Optional, default 30, max 100'},
+  },
+  required: ['subreddit','post_id'],
+  },
+  },
+  {
+  name:'reddit_get_user_posts',
+  description:"Fetch a Reddit user's recent submitted posts. Use for '看对标用户动态' — for each watched reddit username, see what they posted this week. No auth needed for public profiles.",
+  parameters: {
+  type:'object',
+  properties: {
+  username: { type:'string', description:'Reddit username without u/'},
+  sort: { type:'string', enum: ['hot','top','new','controversial'], description:'Optional, default new'},
+  time_filter: { type:'string', enum: ['day','week','month','year','all'], description:'Optional, default week'},
+  limit: { type:'string', description:'Optional, default 20, max 100'},
+  },
+  required: ['username'],
+  },
+  },
+  {
+  name:'suggest_similar_creators',
+  description:"Given the user's account positioning, recommend 15-20 candidate similar/benchmark entities on Reddit (subreddits OR users) as raw leads. Each comes with a confidence level. The LLM may fabricate names, so the agent SHOULD verify each candidate afterwards via `web_search(\"reddit r/Name niche\")` and `reddit_get_subreddit_posts(name, sort=top, t=week, limit=5)` before showing the final list. Filter out low-confidence or unverified candidates, then output the top 10 verified ones with real recent activity.",
+  parameters: {
+  type:'object',
+  properties: {
+  account_context: {
+  type:'string',
+  description:"The user's account positioning / niche",
+  },
+  language: { type:'string', description:'"zh"or"en", default"zh"'},
+  },
+  required: ['account_context'],
+  },
+  },
   {
   name:'remember_preference',
   description:"Persist a key/value pair the user wants the agent to remember across sessions. Use when the user shares a personal fact, position, or credential. For secrets (tokens, API keys), use keys ending in'.token','.key', or'.secret'— values will be redacted in logs and in subsequent read_preferences calls.",
@@ -1585,44 +1573,43 @@ export async function runTool(
  String(args.query ??''),
  Number(args.max_results ?? 6),
  );
- case'github_read':
- return githubRead(
- userId,
- String(args.owner),
- String(args.repo),
- String(args.path ??'README.md'),
- );
- case'twitter_search':
- return twitterApi(userId,'search', {
- query: String(args.query ??''),
- count: String(args.count ?? 20),
- });
- case'twitter_get_user_tweets':
- return twitterApi(userId,'user-tweets', {
- username: String(args.username ??''),
- count: String(args.count ?? 10),
- });
- case'twitter_get_tweet_replies':
- return twitterGetReplies(
- userId,
- String(args.tweet_id ??''),
- Number(args.count ?? 30),
- );
- case'twitter_get_tweet_metrics':
- return twitterGetTweetMetrics(
- userId,
- String(args.tweet_id ??''),
- );
-  case'twitter_get_mentions':
-  return twitterGetMentions(
+  case'github_read':
+  return githubRead(
   userId,
-  String(args.handle ??''),
-  Number(args.hours ?? 24),
-  Number(args.max_results ?? 20),
+  String(args.owner),
+  String(args.repo),
+  String(args.path ??'README.md'),
   );
-  case'verify_x_credentials':
-  return verifyXCredentials(userId);
- case'suggest_similar_creators':
+  case'reddit_search':
+  return redditSearch(
+  String(args.query ??''),
+  (args.sort as'hot'|'top'|'relevance'|'new'|'comments') ??'hot',
+  (args.time_filter as'day'|'week'|'month'|'year'|'all') ??'day',
+  Number(args.limit ?? 20),
+  args.subreddit ? String(args.subreddit) : undefined,
+  );
+  case'reddit_get_subreddit_posts':
+  return redditGetSubredditPosts(
+  String(args.subreddit ??''),
+  (args.sort as'hot'|'top'|'new'|'rising') ??'hot',
+  (args.time_filter as'day'|'week'|'month'|'year'|'all') ??'day',
+  Number(args.limit ?? 20),
+  );
+  case'reddit_get_post_comments':
+  return redditGetPostComments(
+  String(args.subreddit ??''),
+  String(args.post_id ??''),
+  (args.sort as'confidence'|'top'|'new'|'controversial'|'old') ??'confidence',
+  Number(args.limit ?? 30),
+  );
+  case'reddit_get_user_posts':
+  return redditGetUserPosts(
+  String(args.username ??''),
+  (args.sort as'hot'|'top'|'new'|'controversial') ??'new',
+  (args.time_filter as'day'|'week'|'month'|'year'|'all') ??'week',
+  Number(args.limit ?? 20),
+  );
+  case'suggest_similar_creators':
  return suggestSimilarCreators(
  String(args.account_context ??''),
  (args.language as'zh'|'en') ??'zh',
@@ -1678,3 +1665,288 @@ export async function runTool(
  return { ok: false, error: `Unknown tool: ${name}` };
  }
 }
+
+// ─── Reddit public JSON API tools ─────────────────────────────────────────
+// Reddit exposes a stable, unauthenticated JSON API. No cookies, no auth, no
+// rotating query hashes. Requires a unique User-Agent string (Reddit blocks
+// generic ones). Rate limit: ~60 req/min per IP — fine for Vercel free tier.
+//
+// Why this exists: we used to use X (Twitter) GraphQL scraping, but X rotates
+// GraphQL query hashes periodically, so the search endpoint keeps 404'ing.
+// Reddit's REST API doesn't have this problem. As of 2026-07-22, the 6 X
+// scraping tools have been replaced with these 4 Reddit tools.
+
+const REDDIT_USER_AGENT = 'web:creatra:v0.7.4 (by /u/creatra_support)';
+
+type RedditFetchResult = ToolResult & { data?: unknown };
+
+async function redditFetch(
+  path: string,
+  params: Record<string, string>,
+): Promise<RedditFetchResult> {
+  const url = new URL(`https://www.reddit.com${path}`);
+  for (const [k, v] of Object.entries(params)) {
+  url.searchParams.set(k, v);
+  }
+  try {
+  const res = await fetch(url.toString(), {
+  headers: { 'User-Agent': REDDIT_USER_AGENT, Accept:'application/json' },
+  signal: AbortSignal.timeout(10000),
+  });
+  if (!res.ok) {
+  let bodyExcerpt ='';
+  try {
+  bodyExcerpt = (await res.text()).slice(0, 200).replace(/\s+/g,' ').trim();
+  } catch {}
+  return {
+  ok: false,
+  error: `Reddit ${path} returned HTTP ${res.status}. ${bodyExcerpt ? 'body: ' + bodyExcerpt :''}`,
+  };
+  }
+  const data = await res.json();
+  return { ok: true, data };
+  } catch (e) {
+  return { ok: false, error: e instanceof Error ? e.message : String(e) };
+  }
+ }
+
+type RedditPost = {
+  id: string;
+  title: string;
+  subreddit: string;
+  author: string;
+  score: number;
+  num_comments: number;
+  url: string;
+  permalink: string;
+  created_utc: number;
+  selftext?: string;
+  domain?: string;
+  is_self?: boolean;
+ };
+
+function extractRedditPost(raw: unknown): RedditPost | null {
+  if (!raw || typeof raw !=='object') return null;
+  const r = raw as { data?: Record<string, unknown> };
+  const d = r.data;
+  if (!d || typeof d.id !=='string') return null;
+  return {
+  id: d.id,
+  title: typeof d.title ==='string' ? d.title :'',
+  subreddit: typeof d.subreddit ==='string' ? d.subreddit :'',
+  author: typeof d.author ==='string' ? d.author :'[deleted]',
+  score: typeof d.score ==='number' ? d.score : 0,
+  num_comments: typeof d.num_comments ==='number' ? d.num_comments : 0,
+  url: typeof d.url_overridden_by_dest ==='string'
+  ? d.url_overridden_by_dest
+  : typeof d.url ==='string' ? d.url :'',
+  permalink: typeof d.permalink ==='string' ? d.permalink :'',
+  created_utc: typeof d.created_utc ==='number' ? d.created_utc : 0,
+  selftext: typeof d.selftext ==='string' ? d.selftext :'',
+  domain: typeof d.domain ==='string' ? d.domain :'',
+  is_self: typeof d.is_self ==='boolean' ? d.is_self : false,
+  };
+ }
+
+type RedditComment = {
+  id: string;
+  body: string;
+  author: string;
+  score: number;
+  created_utc: number;
+  permalink: string;
+ };
+
+function extractRedditComment(raw: unknown): RedditComment | null {
+  if (!raw || typeof raw !=='object') return null;
+  const r = raw as { data?: Record<string, unknown>; kind?: string };
+  if (r.kind !=='t1') return null;
+  const d = r.data;
+  if (!d || typeof d.id !=='string') return null;
+  return {
+  id: d.id,
+  body: typeof d.body ==='string' ? d.body :'',
+  author: typeof d.author ==='string' ? d.author :'[deleted]',
+  score: typeof d.score ==='number' ? d.score : 0,
+  created_utc: typeof d.created_utc ==='number' ? d.created_utc : 0,
+  permalink: typeof d.permalink ==='string' ? d.permalink :'',
+  };
+ }
+
+async function redditSearch(
+  query: string,
+  sort:'hot'|'top'|'relevance'|'new'|'comments'='hot',
+  t:'day'|'week'|'month'|'year'|'all'='day',
+  limit = 20,
+  subreddit?: string,
+): Promise<ToolResult> {
+  if (!query.trim()) return { ok: false, error:'query required'};
+  const params: Record<string, string> = {
+  q: query,
+  sort,
+  t,
+  limit: String(Math.min(100, Math.max(1, limit))),
+  type:'link',
+  };
+  if (subreddit) params.restrict_sr ='on';
+  const r = await redditFetch(
+  subreddit ? `/r/${encodeURIComponent(subreddit)}/search.json` :'/search.json',
+  params,
+  );
+  if (!r.ok) return r;
+  const data = r.data as { data?: { children?: Array<{ data: unknown }> } } | undefined;
+  const children = data?.data?.children ?? [];
+  const posts = children
+  .map((c) => extractRedditPost(c.data))
+  .filter((p): p is RedditPost => p !== null);
+  return {
+  ok: true,
+  data: {
+  query,
+  subreddit: subreddit ?? null,
+  sort,
+  time_filter: t,
+  count: posts.length,
+  posts: posts.map((p) => ({
+  id: p.id,
+  title: p.title,
+  subreddit: p.subreddit,
+  author: p.author,
+  score: p.score,
+  num_comments: p.num_comments,
+  url: p.url,
+  reddit_url: `https://reddit.com${p.permalink}`,
+  age_hours: Math.round((Date.now() / 1000 - p.created_utc) / 3600),
+  selftext_excerpt: p.selftext ? p.selftext.slice(0, 500) :'',
+  })),
+  },
+  };
+ }
+
+async function redditGetSubredditPosts(
+  subreddit: string,
+  sort:'hot'|'top'|'new'|'rising'='hot',
+  t:'day'|'week'|'month'|'year'|'all'='day',
+  limit = 20,
+): Promise<ToolResult> {
+  if (!subreddit.trim()) return { ok: false, error:'subreddit required'};
+  const params: Record<string, string> = {
+  limit: String(Math.min(100, Math.max(1, limit))),
+  };
+  if (sort ==='top') params.t = t;
+  const r = await redditFetch(
+  `/r/${encodeURIComponent(subreddit)}/${sort}.json`,
+  params,
+  );
+  if (!r.ok) return r;
+  const data = r.data as { data?: { children?: Array<{ data: unknown }> } } | undefined;
+  const children = data?.data?.children ?? [];
+  const posts = children
+  .map((c) => extractRedditPost(c.data))
+  .filter((p): p is RedditPost => p !== null);
+  return {
+  ok: true,
+  data: {
+  subreddit,
+  sort,
+  time_filter: sort ==='top' ? t : null,
+  count: posts.length,
+  posts: posts.map((p) => ({
+  id: p.id,
+  title: p.title,
+  author: p.author,
+  score: p.score,
+  num_comments: p.num_comments,
+  url: p.url,
+  reddit_url: `https://reddit.com${p.permalink}`,
+  age_hours: Math.round((Date.now() / 1000 - p.created_utc) / 3600),
+  })),
+  },
+  };
+ }
+
+async function redditGetPostComments(
+  subreddit: string,
+  postId: string,
+  sort:'confidence'|'top'|'new'|'controversial'|'old'='confidence',
+  limit = 30,
+): Promise<ToolResult> {
+  if (!subreddit.trim() || !postId.trim()) {
+  return { ok: false, error:'subreddit and postId required'};
+  }
+  const r = await redditFetch(
+  `/r/${encodeURIComponent(subreddit)}/comments/${encodeURIComponent(postId)}.json`,
+  { sort, limit: String(Math.min(100, Math.max(1, limit))) },
+  );
+  if (!r.ok) return r;
+  const arr = r.data as Array<{ data?: { children?: Array<unknown> } }> | undefined;
+  if (!Array.isArray(arr) || arr.length < 2) {
+  return { ok: false, error:'unexpected Reddit comments response shape'};
+  }
+  const post = extractRedditPost(arr[0]?.data?.children?.[0]);
+  const topComments = (arr[1]?.data?.children ?? [])
+  .map((c) => extractRedditComment(c))
+  .filter((c): c is RedditComment => c !== null);
+  return {
+  ok: true,
+  data: {
+  post: post ? {
+  id: post.id,
+  title: post.title,
+  author: post.author,
+  score: post.score,
+  num_comments: post.num_comments,
+  reddit_url: `https://reddit.com${post.permalink}`,
+  selftext: post.selftext,
+  } : null,
+  comment_count: topComments.length,
+  comments: topComments.map((c) => ({
+  id: c.id,
+  body: c.body,
+  author: c.author,
+  score: c.score,
+  age_hours: Math.round((Date.now() / 1000 - c.created_utc) / 3600),
+  })),
+  },
+  };
+ }
+
+async function redditGetUserPosts(
+  username: string,
+  sort:'hot'|'top'|'new'|'controversial'='new',
+  t:'day'|'week'|'month'|'year'|'all'='week',
+  limit = 20,
+): Promise<ToolResult> {
+  if (!username.trim()) return { ok: false, error:'username required'};
+  const params: Record<string, string> = {
+  sort,
+  limit: String(Math.min(100, Math.max(1, limit))),
+  };
+  if (sort ==='top' || sort ==='controversial') params.t = t;
+  const r = await redditFetch(
+  `/user/${encodeURIComponent(username)}/submitted.json`,
+  params,
+  );
+  if (!r.ok) return r;
+  const data = r.data as { data?: { children?: Array<{ data: unknown }> } } | undefined;
+  const children = data?.data?.children ?? [];
+  const posts = children
+  .map((c) => extractRedditPost(c.data))
+  .filter((p): p is RedditPost => p !== null);
+  return {
+  ok: true,
+  data: {
+  username,
+  count: posts.length,
+  posts: posts.map((p) => ({
+  id: p.id,
+  title: p.title,
+  subreddit: p.subreddit,
+  score: p.score,
+  num_comments: p.num_comments,
+  reddit_url: `https://reddit.com${p.permalink}`,
+  age_hours: Math.round((Date.now() / 1000 - p.created_utc) / 3600),
+  })),
+  },
+  };
+ }

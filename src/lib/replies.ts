@@ -159,99 +159,21 @@ export async function updateReplyStatus(
 }
 
 /**
- * Sync:拉用户最近 N 条推文的 reply,upsert 进 inbox
+ * Sync: 拉用户最近 N 条推文的 reply, upsert 进 inbox
  * 已存在 (reply_tweet_id) 的不重复
+ *
+ * X (Twitter) integration removed 2026-07-22.
+ * The agent's source-of-truth is now Reddit. The X-specific inbox pipeline
+ * is stubbed — when we add a Reddit equivalent (reddit_get_user_posts +
+ * reddit_get_post_comments loop), this function can be revived.
  */
 export async function syncRepliesForUser(
- userId: string,
- handle: string,
- tweetsPerUser: number = 5,
- repliesPerTweet: number = 10,
+  userId: string,
+  handle: string,
+  tweetsPerUser: number = 5,
+  repliesPerTweet: number = 10,
 ): Promise<{ new_replies: number; total_checked: number; tweets_scanned: number }> {
- const { runTool } = await import('./tools');
-
- // 1. 拉最近 N 条 user 推文
- const tweetsResult = await runTool('twitter_get_user_tweets',
- { username: handle, count: String(tweetsPerUser) },
- { userId },
- );
- if (!tweetsResult.ok) {
- throw new Error(tweetsResult.error ||'failed to pull user tweets');
- }
- const tweetsData = tweetsResult.data as any;
- const tweets: any[] =
- tweetsData?.tweets ??
- tweetsData?.data?.user?.result?.timeline_v2?.timeline?.instructions
- ?.flatMap((i: any) => i.entries ?? [])
- ?.map((e: any) => e?.content?.itemContent?.tweet_results?.result?.legacy)
- ?.filter(Boolean) ??
- [];
-
- if (tweets.length === 0) {
- return { new_replies: 0, total_checked: 0, tweets_scanned: 0 };
- }
-
- let newReplies = 0;
- let totalChecked = 0;
-
- const db = getDb();
- if (!db) {
- return { new_replies: 0, total_checked: 0, tweets_scanned: tweets.length };
- }
-
- for (const t of tweets) {
- const tweetId = t.id_str ?? t.id;
- const tweetText = t.full_text ?? t.text ??'';
- if (!tweetId) continue;
-
- // 2. 拉这条推文的 replies
- const repliesResult = await runTool('twitter_get_tweet_replies',
- { tweet_id: tweetId, count: String(repliesPerTweet) },
- { userId },
- );
- if (!repliesResult.ok) continue;
-
- // 3. 解析 replies(深嵌套结构,defensive)
- const repliesData = repliesResult.data as any;
- const replies: any[] = extractRepliesFromTimeline(repliesData);
- totalChecked += replies.length;
-
- for (const r of replies) {
- if (!r.id_str || r.id_str === tweetId) continue; // skip parent + invalid
-
- try {
- const ins = await db.query(
- `INSERT INTO ${TABLE.replyInbox}
- (user_id, parent_tweet_id, parent_tweet_text, reply_tweet_id,
- reply_author_handle, reply_author_name, reply_author_avatar,
- reply_text, reply_metrics)
- VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9::jsonb)
- ON CONFLICT (reply_tweet_id) DO NOTHING
- RETURNING id`,
- [
- userId,
- tweetId,
- tweetText.slice(0, 500),
- r.id_str,
- r.author_handle ?? r.user?.screen_name ?? null,
- r.author_name ?? r.user?.name ?? null,
- r.author_avatar ?? r.user?.avatar_url ?? null,
- (r.full_text ?? r.text ??'').slice(0, 1000),
- JSON.stringify({
- likes: r.favorite_count ?? 0,
- retweets: r.retweet_count ?? 0,
- replies: r.reply_count ?? 0,
- }),
- ],
- );
- if (ins.rows.length > 0) newReplies++;
- } catch (e) {
- // skip duplicate / error
- }
- }
- }
-
- return { new_replies: newReplies, total_checked: totalChecked, tweets_scanned: tweets.length };
+  return { new_replies: 0, total_checked: 0, tweets_scanned: 0 };
 }
 
 function extractRepliesFromTimeline(data: any): any[] {
