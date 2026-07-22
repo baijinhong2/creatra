@@ -115,11 +115,11 @@ async function tavilySearch(
  ok: true,
  data: {
  answer: data.answer,
- results: (data.results ?? []).map((rr) => ({
- title: rr.title,
- url: rr.url,
- snippet: rr.content.slice(0, 300),
- })),
+  results: (data.results ?? []).map((rr) => ({
+  title: rr.title,
+  url: rr.url,
+  snippet: String(rr.content ?? '').slice(0, 300),
+  })),
  },
  };
  } catch (e) {
@@ -1741,7 +1741,7 @@ async function webSearchReddit(
   const postId = urlMatch?.[2] ??'?';
   return {
   id: postId,
-  title: r.title,
+  title: r.title ||'(无标题)',
   subreddit: subredditName,
   author:'?',
   score: 0,
@@ -1749,7 +1749,7 @@ async function webSearchReddit(
   url: r.url,
   reddit_url: r.url,
   age_hours: -1,
-  selftext_excerpt: r.content.slice(0, 500),
+  selftext_excerpt: String(r.content ?? '').slice(0, 500),
   };
   });
   return {
