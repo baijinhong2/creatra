@@ -150,7 +150,7 @@ for (const [uid, u] of users) {
   }
 
   // Probe 2: SearchTimeline (the actual endpoint that 404'd)
-  const searchUrl = `https://api.twitter.com/graphql/gkjsKepM6gl_HmFWoWKfgg/SearchTimeline?variables=${encodeURIComponent(
+  const searchUrl = `https://api.twitter.com/graphql/hz_94eVAtrtQo_vO3my7Rw/SearchTimeline?variables=${encodeURIComponent(
   JSON.stringify({
   rawQuery: 'AI agents',
   count: 5,
