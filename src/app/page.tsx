@@ -2650,7 +2650,9 @@ function ToolCard({
  <pre className="overflow-x-auto whitespace-pre-wrap break-all text-zinc-700">
  {tool.error
  ? tool.error
- : JSON.stringify(tool.result, null, 2).slice(0, 4000)}
+ : tool.result != null
+ ? JSON.stringify(tool.result, null, 2).slice(0, 4000)
+ :'(empty)'}
  </pre>
  </div>
  )}
