@@ -607,64 +607,77 @@ async function suggestSimilarCreators(
  return { ok: false, error:'DEEPSEEK_API_KEY not set'};
  }
  const prompt =
- language ==='zh'? `基于以下账号定位,推荐 15-20 个可能的相似/对标 X(Twitter)账号。
+  language ==='zh'? `基于以下账号定位,推荐 15-20 个可能的相似/对标实体(subreddit 优先,辅以活跃 Reddit 用户)。
 
 账号定位:${accountContext}
 
 要求:
-- 优先推荐真人创作者,不要官方品牌账号
-- 推荐不同量级的账号(几个大 V + 几个成长中的 + 几个小而新)
-- 给出每个账号的 @handle、一句话简介、为什么值得对标、估算粉丝数级别
-- **诚实**:有些 handle 你可能记不清或不确定,可以列出来但**不要瞎编**。给每条加"confidence":"high|medium|low"标记
- - high: 非常确定这个人在做这个方向
+- 优先推荐真实活跃的 subreddit(优先 r/xxx) + 一些活跃的 Reddit 用户
+- 推荐不同规模的(subreddit: 几个大的 + 几个中等 + 几个小而精;用户: 几个大 V + 几个成长中的 + 几个小而新)
+- 给出每个的 handle/名字、一句话简介、为什么值得对标、规模级别
+- **诚实**:有些名字你可能记不清或不确定,可以列出来但**不要瞎编**。给每条加"confidence":"high|medium|low"标记
+ - high: 非常确定这个 subreddit/人在做这个方向
  - medium: 大概在做这个方向,可能有偏差
- - low: 名字可能记错或人可能已经改名/不活跃
+ - low: 名字可能记错或 subreddit/人可能已经改名/不活跃
 - 直接输出 JSON 数组,不要 markdown
 
 格式:
-[{"handle":"@xxx","bio":"一句话简介","why":"为什么对标","followerRange":"1k-10k|10k-100k|100k+","confidence":"high|medium|low"}]`
- : `Recommend 15-20 candidate similar/benchmark X (Twitter) accounts based on the following account positioning.
+[{"type":"subreddit|user","handle":"xxx","bio":"一句话简介","why":"为什么对标","sizeRange":"small|medium|large|huge","confidence":"high|medium|low"}]`
+  : `Recommend 15-20 candidate similar/benchmark entities (subreddits or users) on Reddit based on the following account positioning.
 
 Positioning: ${accountContext}
 
 Requirements:
-- Prioritize real creators, not official brand accounts
-- Mix follower sizes (a few big + several growing + a few small/new)
-- For each: @handle, one-line bio, why they're a good benchmark, follower range
-- **Be honest**: if you're not sure about a handle or the person may have rebranded/gone inactive, include it but tag confidence as"low". Do NOT fabricate handles.
+- Prioritize active subreddits (format r/xxx) and active Reddit users
+- Mix sizes (a few huge + several growing + a few small/new)
+- For each: handle/name, one-line bio, why they're a good benchmark, size range
+- **Be honest**: if you're not sure about a name or it may have rebranded/gone inactive, include it but tag confidence as"low". Do NOT fabricate names.
 - Mark each with"confidence":"high|medium|low"- Output raw JSON array, no markdown
 
 Format:
-[{"handle":"@xxx","bio":"one-line bio","why":"why benchmark","followerRange":"1k-10k|10k-100k|100k+","confidence":"high|medium|low"}]`;
+[{"type":"subreddit|user","handle":"xxx","bio":"one-line bio","why":"why benchmark","sizeRange":"small|medium|large|huge","confidence":"high|medium|low"}]`;
 
- try {
- const r = await deepseek.chat.completions.create({
- model:'deepseek-v4-flash',
- messages: [
- {
- role:'system',
- content:'You are a research assistant that recommends X (Twitter) accounts. Output strictly valid JSON only — no markdown fences, no explanations. Return a JSON object with a"creators"array of 15-20 entries.',
- },
- { role:'user', content: prompt },
- ],
- response_format: { type:'json_object'},
- temperature: 0.7,
- max_tokens: 3000,
- });
- const content = (r as any).choices?.[0]?.message?.content;
- if (!content) return { ok: false, error:'Empty LLM response'};
- try {
- const parsed = JSON.parse(content);
- const list = Array.isArray(parsed)
- ? parsed
- : (parsed.creators ?? parsed.suggestions ?? parsed.accounts ?? []);
- return { ok: true, data: list };
- } catch {
- return { ok: false, error:'Invalid JSON from LLM'};
- }
- } catch (e) {
- return { ok: false, error: e instanceof Error ? e.message : String(e) };
- }
+  // DeepSeek occasionally returns empty content (transient issue).
+  // Retry once with a fresh request before giving up.
+  const doCall = async () => deepseek.chat.completions.create({
+  model:'deepseek-v4-flash',
+  messages: [
+  {
+  role:'system',
+  content:'You are a research assistant that recommends Reddit communities and users. Output strictly valid JSON only — no markdown fences, no explanations. Return a JSON object with a"creators"array of 15-20 entries.',
+  },
+  { role:'user', content: prompt },
+  ],
+  response_format: { type:'json_object'},
+  temperature: 0.7,
+  max_tokens: 4000,
+  });
+  let r: Awaited<ReturnType<typeof doCall>>;
+  try {
+  r = await doCall();
+  } catch (e) {
+  return { ok: false, error: e instanceof Error ? e.message : String(e) };
+  }
+  let content = (r as any).choices?.[0]?.message?.content;
+  if (!content) {
+  // Retry once — DeepSeek sometimes returns empty on first try.
+  try {
+  r = await doCall();
+  content = (r as any).choices?.[0]?.message?.content;
+  } catch (e) {
+  return { ok: false, error: e instanceof Error ? e.message : String(e) };
+  }
+  }
+  if (!content) return { ok: false, error:'Empty LLM response (DeepSeek returned empty twice — likely transient rate limit or model issue)'};
+  try {
+  const parsed = JSON.parse(content);
+  const list = Array.isArray(parsed)
+  ? parsed
+  : (parsed.creators ?? parsed.suggestions ?? parsed.accounts ?? []);
+  return { ok: true, data: list };
+  } catch {
+  return { ok: false, error:'Invalid JSON from LLM'};
+  }
 }
 
 async function rememberPreference(
