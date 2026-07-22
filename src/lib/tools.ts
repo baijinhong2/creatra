@@ -287,7 +287,7 @@ function xGraphqlUrl(
   const qs = Object.entries(params)
   .map(([k, v]) => `${encodeURIComponent(k)}=${encodeURIComponent(v)}`)
   .join('&');
-  return `https://api.twitter.com/graphql/${queryHash}/${operation}?${qs}`;
+  return `https://api.twitter.com/i/api/graphql/${queryHash}/${operation}?${qs}`;
 }
 
 async function twitterApi(
