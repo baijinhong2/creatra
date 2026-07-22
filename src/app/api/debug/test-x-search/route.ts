@@ -64,11 +64,11 @@ function variants(): Variant[] {
   ];
 }
 
-export async function POST(request: NextRequest) {
+export async function GET(request: NextRequest) {
   const sid = await currentSessionIdServer();
   const user = await userFromSession(sid);
   if (!user) {
-  return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+  return NextResponse.json({ error: 'Unauthorized — please log in first' }, { status: 401 });
   }
 
   const authToken = await getCred(user.id, 'x.auth_token', 'X_AUTH_TOKEN');
@@ -146,10 +146,90 @@ export async function POST(request: NextRequest) {
   });
   }
 
+  // If the client wants HTML (default browser visit), render a simple table.
+  const accept = request.headers.get('accept') ?? '';
+  if (accept.includes('text/html')) {
+  const html = renderHtml(results);
+  return new NextResponse(html, {
+  status: 200,
+  headers: { 'Content-Type': 'text/html; charset=utf-8' },
+  });
+  }
+
   return NextResponse.json({
   ok: true,
   query_hash: QUERY_HASH,
   feature_count: Object.keys(X_FEATURES).length,
   results,
   });
+}
+
+function renderHtml(results: Array<{
+  label: string;
+  status: number | null;
+  ms: number;
+  body_preview: string;
+  body_is_json: boolean;
+  tweet_count: number | null;
+  error: string | null;
+}>): string {
+  const rows = results.map((r) => {
+  const statusColor = r.status === 200 ? '#22c55e' : r.status === null ? '#9ca3af' : '#ef4444';
+  const verdict = r.status === 200 && (r.tweet_count ?? 0) > 0
+  ? '✅ WORKS'
+  : r.status === 200 ? '⚠️  200 but no tweets'
+  : r.status === null ? '❌ network'
+  : `❌ ${r.status}`;
+  return `<tr>
+  <td style="padding:8px;border:1px solid #ddd;font-family:monospace;font-size:12px">${escape(r.label)}</td>
+  <td style="padding:8px;border:1px solid #ddd;color:${statusColor};font-weight:bold;font-family:monospace">${r.status ?? '—'}</td>
+  <td style="padding:8px;border:1px solid #ddd;font-family:monospace">${r.ms}ms</td>
+  <td style="padding:8px;border:1px solid #ddd;font-family:monospace;font-size:12px">${r.tweet_count ?? '—'}</td>
+  <td style="padding:8px;border:1px solid #ddd;font-family:monospace">${verdict}</td>
+  <td style="padding:8px;border:1px solid #ddd;font-family:monospace;font-size:11px;max-width:400px;word-break:break-word">${escape((r.error ?? r.body_preview).slice(0, 200))}</td>
+  </tr>`;
+  }).join('\n');
+
+  return `<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<title>X SearchTimeline 诊断</title>
+<style>
+body { font-family: -apple-system, BlinkMacSystemFont, sans-serif; max-width: 1200px; margin: 40px auto; padding: 0 20px; color: #111; }
+h1 { font-size: 18px; }
+table { width: 100%; border-collapse: collapse; margin-top: 16px; }
+th { text-align: left; padding: 8px; border: 1px solid #ddd; background: #f3f4f6; font-size: 12px; }
+.muted { color: #6b7280; font-size: 12px; margin-top: 8px; }
+</style>
+</head>
+<body>
+<h1>X SearchTimeline 诊断结果</h1>
+<p class="muted">queryHash: <code>hz_94eVAtrtQo_vO3my7Rw</code> · features: 37 个 · 4 个 URL 变体</p>
+<table>
+  <thead>
+  <tr>
+  <th>URL 变体</th>
+  <th>HTTP</th>
+  <th>耗时</th>
+  <th>推文数</th>
+  <th>诊断</th>
+  <th>body 摘要 / error</th>
+  </tr>
+  </thead>
+  <tbody>
+  ${rows}
+  </tbody>
+</table>
+<p class="muted">截图或复制上面表格贴给 Mavis。看到 ✅ WORKS 的那行,就知道哪个 URL 该用了。</p>
+</body>
+</html>`;
+}
+
+function escape(s: string): string {
+  return s
+  .replace(/&/g, '&amp;')
+  .replace(/</g, '&lt;')
+  .replace(/>/g, '&gt;')
+  .replace(/"/g, '&quot;');
 }
