@@ -289,6 +289,32 @@ export async function* runAgent(
   // instead of letting the loop run to MAX_ITERATIONS and dumping a cryptic
   // "Agent loop hit max iterations" error.
   const toolMessages = messages.filter((m) => m.role ==='tool');
+
+  // Helper: find the tool name for the Nth-from-last tool message
+  // by walking messages backward to find the corresponding assistant turn.
+  function findToolNameForToolMsg(idx: number): string | null {
+  let toolMsgCount = 0;
+  for (let i = messages.length - 1; i >= 0; i--) {
+  const m = messages[i] as { role: string; tool_calls?: Array<{ function: { name: string } }> };
+  if (m.role ==='tool') {
+  if (toolMsgCount === idx) {
+  // found the Nth tool message; the tool name is in the immediately preceding
+  // assistant message's tool_calls (for the corresponding call)
+  for (let j = i - 1; j >= 0; j--) {
+  const a = messages[j] as { role: string; tool_calls?: Array<{ function: { name: string } }> };
+  if (a.role ==='assistant'&& a.tool_calls && a.tool_calls.length > 0) {
+  return a.tool_calls[a.tool_calls.length - 1].function.name;
+  }
+  }
+  return null;
+  }
+  toolMsgCount++;
+  }
+  }
+  return null;
+  }
+
+  // Guard 1: same (ok:false, error) on last 2 tool calls → stuck on a broken tool
   if (toolMessages.length >= 2) {
   const last1 = safeParse((toolMessages[toolMessages.length - 1] as { content: string }).content);
   const last2 = safeParse((toolMessages[toolMessages.length - 2] as { content: string }).content);
@@ -305,6 +331,39 @@ export async function* runAgent(
   `\`${stuckError}\`\n\n` +
   `这种情况一般是平台接口本身不可用(网络问题、anti-bot 拦截、或账号/凭据没配)。` +
   `**别瞎重试** — 直接告诉用户哪个工具不可用 + 错误原因,如果有必要建议他们稍后再试或换个工具。`,
+  };
+  yield { type:'done'};
+  return;
+  }
+  }
+
+  // Guard 2: same tool called 3+ times in last 3 calls → agent is in a retry loop
+  if (toolMessages.length >= 3) {
+  const name0 = findToolNameForToolMsg(toolMessages.length - 3);
+  const name1 = findToolNameForToolMsg(toolMessages.length - 2);
+  const name2 = findToolNameForToolMsg(toolMessages.length - 1);
+  if (name0 && name1 && name2 && name0 === name1 && name1 === name2) {
+  yield {
+  type:'message_end',
+  content:
+  `我刚才连续 3 次调 \`${name0}\` 都没拿到新进展,可能工具正常但我没把它用对。\n\n` +
+  `**别再调** — 直接基于已有数据给用户一个**部分**答案,或者**承认自己卡住了**,让用户给点提示(换个关键词 / 加点上下文 / 换个工具)。`,
+  };
+  yield { type:'done'};
+  return;
+  }
+  }
+
+  // Guard 3: last 2 tool results are string-identical → agent is going in circles
+  if (toolMessages.length >= 2) {
+  const last1Str = (toolMessages[toolMessages.length - 1] as { content: string }).content;
+  const last2Str = (toolMessages[toolMessages.length - 2] as { content: string }).content;
+  if (last1Str === last2Str) {
+  yield {
+  type:'message_end',
+  content:
+  `我刚才调了 2 次工具,拿到的结果一字不差 — 明显在空转。\n\n` +
+  `直接基于已有数据给用户一个**部分**答案,或者**承认自己卡住了**,让用户决定下一步。`,
   };
   yield { type:'done'};
   return;
