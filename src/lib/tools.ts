@@ -65,10 +65,10 @@ async function writePref(
  }
 }
 
-async function getCred(
- userId: string,
- prefKey: string,
- envKey: string,
+export async function getCred(
+  userId: string,
+  prefKey: string,
+  envKey: string,
 ): Promise<string | null> {
  const fromPref = await readPref(userId, prefKey);
  if (typeof fromPref ==='string'&& fromPref.length > 0) return fromPref;
@@ -227,7 +227,7 @@ async function githubRead(
  * Keep this in sync with what the x.com web client sends. Last verified: 2026-07-22,
  * captured from a real x.com SearchTimeline request.
  */
-const X_FEATURES = {
+export const X_FEATURES = {
   rweb_video_screen_enabled: false,
   rweb_cashtags_enabled: true,
   profile_label_improvements_pcf_label_in_post_enabled: true,
