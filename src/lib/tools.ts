@@ -1305,7 +1305,7 @@ async function forgetCreator(
 // ─── Tool registry (definitions + dispatch) ───────────────────────────────
 
 export type ToolName =
-  |'web_search'|'web_image_search'|'github_read'|'reddit_search'|'reddit_get_subreddit_posts'|'reddit_get_post_comments'|'reddit_get_user_posts'|'suggest_similar_creators'|'remember_preference'|'read_preferences'|'save_insight'|'list_insights'|'delete_insight'|'search_insights'|'remember_creator'|'list_creators'|'forget_creator';
+  |'web_search'|'web_image_search'|'github_read'|'reddit_search'|'reddit_get_subreddit_posts'|'reddit_get_post_comments'|'reddit_get_user_posts'|'twitter_get_user_tweets'|'twitter_get_tweet_replies'|'twitter_get_tweet_metrics'|'verify_x_credentials'|'suggest_similar_creators'|'remember_preference'|'read_preferences'|'save_insight'|'list_insights'|'delete_insight'|'search_insights'|'remember_creator'|'list_creators'|'forget_creator';
 
 export const TOOL_DEFINITIONS: ToolDefinition[] = [
  {
@@ -1400,6 +1400,50 @@ export const TOOL_DEFINITIONS: ToolDefinition[] = [
   limit: { type:'string', description:'Optional, default 20, max 100'},
   },
   required: ['username'],
+  },
+  },
+  {
+  name:'twitter_get_user_tweets',
+  description:"Fetch the most recent tweets of a given X user. Use to study a benchmark account's recent content. For the user's OWN tweets, read their handle from Sources panel ('自己的 X 账号' / x.handle key) and call this with that handle — the response includes impressions/likes/reposts/replies metrics on each tweet which skill 8 (analysis) needs. Requires X cookies (x.auth_token + x.ct0 in Sources).",
+  parameters: {
+  type:'object',
+  properties: {
+  username: { type:'string', description:'X handle without @'},
+  count: { type:'string', description:'Optional, default 10'},
+  },
+  required: ['username'],
+  },
+  },
+  {
+  name:'twitter_get_tweet_replies',
+  description:"Fetch the conversation thread under a single tweet (parent + replies) by tweet id. Use this for skill 6 (comment triage) — the user has their own recent tweet ids from twitter_get_user_tweets(their_handle), pass each interesting one here, then decide which replies deserve a response and draft one. Requires X cookies.",
+  parameters: {
+  type:'object',
+  properties: {
+  tweet_id: { type:'string', description:'Numeric X tweet id'},
+  count: { type:'string', description:'Optional, default 30'},
+  },
+  required: ['tweet_id'],
+  },
+  },
+  {
+  name:'twitter_get_tweet_metrics',
+  description:"Fetch current engagement metrics (likes, retweets, replies, quotes, impressions, bookmarks) for a single tweet by id. Use after the user marks a tweet as 'used' and pastes the URL — pull periodically to track which agent suggestions actually performed well. Requires X cookies.",
+  parameters: {
+  type:'object',
+  properties: {
+  tweet_id: { type:'string', description:'Numeric X tweet id (extracted from URL)'},
+  },
+  required: ['tweet_id'],
+  },
+  },
+  {
+  name:'verify_x_credentials',
+  description:"Self-test the user's X cookies (auth_token + ct0) against the TWO endpoints the agent actually uses (UserByScreenName for cookies sanity, SearchTimeline for actual search). Returns a precise diagnosis: 'ok' / 'cookies expired (401/403)' / 'X anti-bot challenge (HTML returned)' / 'rate-limited (429)' / 'network error'. Helps distinguish cookie problems from X-hash-rotation problems.",
+  parameters: {
+  type:'object',
+  properties: {},
+  required: [],
   },
   },
   {
@@ -1611,6 +1655,24 @@ export async function runTool(
   (args.time_filter as'day'|'week'|'month'|'year'|'all') ??'week',
   Number(args.limit ?? 20),
   );
+  case'twitter_get_user_tweets':
+  return twitterApi(userId,'user-tweets', {
+  username: String(args.username ??''),
+  count: String(args.count ?? 10),
+  });
+  case'twitter_get_tweet_replies':
+  return twitterGetReplies(
+  userId,
+  String(args.tweet_id ??''),
+  Number(args.count ?? 30),
+  );
+  case'twitter_get_tweet_metrics':
+  return twitterGetTweetMetrics(
+  userId,
+  String(args.tweet_id ??''),
+  );
+  case'verify_x_credentials':
+  return verifyXCredentials(userId);
   case'suggest_similar_creators':
  return suggestSimilarCreators(
  String(args.account_context ??''),

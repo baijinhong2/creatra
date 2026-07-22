@@ -140,6 +140,25 @@ type Source = {
 
 const SOURCES: Source[] = [
   {
+  prefKey:'x.handle',
+  label:'source.xHandle.label',
+  placeholder:'你的 X 账号 handle(不带 @),如 naval',
+  hint:'source.xHandle.hint',
+  inputType:'text',
+  },
+  {
+  prefKey:'x.auth_token',
+  label:'source.xAuth.label',
+  placeholder:'auth_token cookie value',
+  hint:'source.xAuth.hint',
+  },
+  {
+  prefKey:'x.ct0',
+  label:'source.xCt0.label',
+  placeholder:'ct0 cookie value',
+  hint:'source.xCt0.hint',
+  },
+  {
   prefKey:'reddit.handle',
   label:'source.redditHandle.label',
   placeholder:'你的 Reddit 用户名(不带 u/),如 spez',
