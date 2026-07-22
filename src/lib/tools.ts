@@ -278,6 +278,7 @@ function xGraphqlUrl(
   const params: Record<string, string> = {
   variables: JSON.stringify(variables),
   features: JSON.stringify(X_FEATURES),
+  fieldToggles: JSON.stringify({}),
   };
   if (extraQuery) {
   for (const [k, v] of Object.entries(extraQuery)) {
@@ -287,7 +288,7 @@ function xGraphqlUrl(
   const qs = Object.entries(params)
   .map(([k, v]) => `${encodeURIComponent(k)}=${encodeURIComponent(v)}`)
   .join('&');
-  return `https://api.twitter.com/i/api/graphql/${queryHash}/${operation}?${qs}`;
+  return `https://x.com/i/api/graphql/${queryHash}/${operation}?${qs}`;
 }
 
 async function twitterApi(
